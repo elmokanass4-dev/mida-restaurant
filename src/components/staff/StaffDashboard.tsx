@@ -788,7 +788,7 @@ export const StaffDashboard: React.FC<Props> = ({ restaurant, onSwitchToCustomer
                 Rapport des ventes & Métriques de service
               </h3>
               <p className="text-xs text-neutral-400">
-                Données réelles agrégées sur les commandes enregistrées à Meknès.
+                Statistiques calculées à partir des commandes enregistrées. Dans la démonstration, ces données sont fictives.
               </p>
             </div>
 
@@ -798,7 +798,7 @@ export const StaffDashboard: React.FC<Props> = ({ restaurant, onSwitchToCustomer
                 <span className="text-[11px] text-neutral-400">Chiffre d'affaires (MAD)</span>
                 <p className="text-2xl font-black text-amber-400 tabular-nums mt-1 font-sans">
                   {orders
-                    .filter((o) => o.status !== 'cancelled' && o.status !== 'rejected')
+                    .filter((o) => o.paymentStatus === 'paid' && o.status !== 'cancelled' && o.status !== 'rejected')
                     .reduce((sum, o) => sum + o.totalMAD, 0)}{' '}
                   MAD
                 </p>
@@ -814,7 +814,7 @@ export const StaffDashboard: React.FC<Props> = ({ restaurant, onSwitchToCustomer
               <div className="p-4 rounded-3xl bg-[#170c12] border border-amber-950/60">
                 <span className="text-[11px] text-neutral-400">Panier moyen</span>
                 <p className="text-2xl font-black text-white tabular-nums mt-1 font-sans">
-                  118 MAD
+                  {(() => {const paid=orders.filter(o=>o.paymentStatus==='paid'&&o.status!=='cancelled'&&o.status!=='rejected');return paid.length?(paid.reduce((sum,o)=>sum+o.totalMAD,0)/paid.length).toFixed(2):'0';})()} MAD
                 </p>
               </div>
 

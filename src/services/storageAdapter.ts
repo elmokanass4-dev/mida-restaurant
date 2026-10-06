@@ -1,6 +1,7 @@
 import { Restaurant, Dish, Category, Order, CustomerProfile, LoyaltyLedgerEntry, StaffCallRequest, OrderItem, OrderStatus, PaymentStatus } from '../types';
 import { SEED_RESTAURANTS, SEED_CATEGORIES, SEED_DISHES } from '../data/seedData';
-import { api, backendEnabled, StaffUser } from './api';
+import { api, backendEnabled, demoEnabled, StaffUser } from './api';
+import {DemoPersistence} from './demoPersistence';
 export const SYNC_EVENT_NAME='mida_sync_event';
 export const ERROR_EVENT_NAME='mida_service_error';
 interface Snapshot {user:StaffUser|null; restaurants:Restaurant[]; dishes:Dish[]; categories:Category[]; orders:Order[]; customers:CustomerProfile[]; ledger:LoyaltyLedgerEntry[]; calls:StaffCallRequest[]}
@@ -8,9 +9,21 @@ const emptyCustomer=(restaurantId:string):CustomerProfile=>({id:'guest',restaura
 class StorageAdapter {
   private snapshot:Snapshot={user:null,restaurants:SEED_RESTAURANTS.map(r=>({...r,tables:[],returnCampaigns:[]})),dishes:SEED_DISHES,categories:SEED_CATEGORIES,orders:[],customers:[],ledger:[],calls:[]};
   private generation=0;
+  private demo=demoEnabled?new DemoPersistence():undefined;
   public user:StaffUser|null=null;
   public connected=false;
+  public setDemoRole(role:StaffUser['role']|null,restaurantId:string) {
+    if(!this.demo)throw new Error('Présentation indisponible.');
+    this.user=role?{id:'demo',email:'Compte de démonstration',role,restaurantId}:null;
+    return this.refresh();
+  }
+  public resetDemo(){if(!this.demo)throw new Error('Présentation indisponible.');this.demo.initializeIfEmpty(true);return this.refresh();}
   public async refresh() {
+    if(this.demo){
+      const restaurants=this.demo.getRestaurants();
+      this.snapshot={user:this.user,restaurants,categories:restaurants.flatMap(r=>this.demo!.getCategories(r.id)),dishes:restaurants.flatMap(r=>this.demo!.getDishes(r.id)),orders:restaurants.flatMap(r=>this.demo!.getOrders(r.id)),customers:restaurants.map(r=>this.demo!.getCustomer(r.id)),ledger:restaurants.flatMap(r=>this.demo!.getLoyaltyLedger(r.id)),calls:restaurants.flatMap(r=>this.demo!.getStaffCalls(r.id))};
+      this.connected=true;window.dispatchEvent(new CustomEvent(SYNC_EVENT_NAME));return;
+    }
     if(!backendEnabled) return;
     const generation=this.generation;
     const next=await api<Snapshot>('/snapshot');
@@ -28,6 +41,19 @@ class StorageAdapter {
     window.dispatchEvent(new CustomEvent(SYNC_EVENT_NAME)); await this.refresh();
   }
   public async mutate<T>(path:string,method:string,body?:unknown,headers?:Record<string,string>):Promise<T> {
+    if(this.demo){
+      const data=body as any;const parts=path.split('/').map(decodeURIComponent);let result:unknown;
+      if(path==='/orders'){if(!this.demo.getRestaurants().find(r=>r.id===data.restaurantId)?.isOpen)throw new Error('Le restaurant a fermé la prise de commandes.');result=this.demo.submitOrder(data);}
+      else if(parts[1]==='orders'&&parts[3]==='status')result=this.demo.updateOrderStatus(data);
+      else if(parts[1]==='orders'&&parts[3]==='payment')result=this.demo.updatePaymentStatus(data);
+      else if(parts[1]==='dishes')result=this.demo.toggleDishAvailability(parts[2]);
+      else if(parts[1]==='profile')result=this.demo.updateCustomer({...this.demo.getCustomer(parts[2]),...data});
+      else if(path==='/calls')result=this.demo.submitStaffCall(data);
+      else if(parts[1]==='calls')result=this.demo.resolveStaffCall(parts[2]);
+      else if(parts[1]==='restaurants'){const restaurant=this.demo.getRestaurants().find(r=>r.id===parts[2]);if(!restaurant)throw new Error('Restaurant introuvable.');result=this.demo.updateRestaurant({...restaurant,isOpen:data.isOpen});}
+      else throw new Error('Cette fonction nécessite le service réel.');
+      await this.refresh();return result as T;
+    }
     const result=await api<T>(path,method,body,headers);
     try {await this.refresh();} catch {window.dispatchEvent(new CustomEvent(ERROR_EVENT_NAME,{detail:'Enregistrement effectué, mais la synchronisation est interrompue.'}));}
     return result;

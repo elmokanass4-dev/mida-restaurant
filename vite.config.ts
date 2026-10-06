@@ -3,10 +3,11 @@ import react from '@vitejs/plugin-react';
 import path from 'path';
 import {defineConfig} from 'vite';
 
-export default defineConfig(() => {
+export default defineConfig(({mode}) => {
   return {
-    base: '/mida-restaurant/',
-    plugins: [react(), tailwindcss()],
+    base: mode==='demo'?'/mida-restaurant/demo/':'/mida-restaurant/',
+    define: {'import.meta.env.VITE_DEMO_MODE': JSON.stringify(mode==='demo')},
+    plugins: [react(), tailwindcss(), ...(mode==='demo'?[{name:'presentation-metadata',transformIndexHtml(html:string){return html.replace('<title>Mida - Restaurant Ordering & Multi-Tenant Platform</title>','<title>MIDA · Démonstration restaurant</title><meta name="robots" content="noindex, nofollow" />');}}]:[])],
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),
