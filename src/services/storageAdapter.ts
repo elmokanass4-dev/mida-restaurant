@@ -12,6 +12,8 @@ class StorageAdapter {
   private demo=demoEnabled?new DemoPersistence():undefined;
   public user:StaffUser|null=null;
   public connected=false;
+  public issueDemoReceipt(orderId:string){if(!this.demo)throw new Error('Fonction disponible uniquement en démonstration.');return this.demo.issueReceipt(orderId);}
+  public async claimDemoReceipt(restaurantId:string,code:string){if(!this.demo)throw new Error('Fonction disponible uniquement en démonstration.');const points=this.demo.claimReceipt(restaurantId,code);await this.refresh();return points;}
   public setDemoRole(role:StaffUser['role']|null,restaurantId:string) {
     if(!this.demo)throw new Error('Présentation indisponible.');
     this.user=role?{id:'demo',email:'Compte de démonstration',role,restaurantId}:null;

@@ -21,6 +21,7 @@ import {
 } from '../data/seedData';
 
 const STORAGE_KEYS = {
+  RECEIPTS: 'mida_presentation_receipts_v1',
   RESTAURANTS: 'mida_presentation_restaurants_v1',
   CATEGORIES: 'mida_presentation_categories_v1',
   DISHES: 'mida_presentation_dishes_v1',
@@ -68,6 +69,7 @@ export class DemoPersistence {
 
   constructor() {
     this.initializeIfEmpty();
+    if (!this.getItem('mida_receipt_demo_version', false)) {this.initializeIfEmpty(true);this.setItem('mida_receipt_demo_version',true);}
   }
 
   public initializeIfEmpty(forceReset = false) {
@@ -75,9 +77,10 @@ export class DemoPersistence {
       this.setItem(STORAGE_KEYS.RESTAURANTS, SEED_RESTAURANTS);
       this.setItem(STORAGE_KEYS.CATEGORIES, SEED_CATEGORIES);
       this.setItem(STORAGE_KEYS.DISHES, SEED_DISHES);
-      this.setItem(STORAGE_KEYS.ORDERS, SEED_ORDERS);
-      this.setItem(STORAGE_KEYS.CUSTOMER, SEED_CUSTOMER);
-      this.setItem(STORAGE_KEYS.LOYALTY, SEED_LOYALTY_LEDGER);
+      this.setItem(STORAGE_KEYS.ORDERS, SEED_ORDERS.map(o=>({...o,loyaltyPointsEarned:0})));
+      this.setItem(STORAGE_KEYS.CUSTOMER, {...SEED_CUSTOMER,loyaltyPoints:0,availableOffers:[]});
+      this.setItem(STORAGE_KEYS.LOYALTY, []);
+      this.setItem(STORAGE_KEYS.RECEIPTS, []);
       this.setItem(STORAGE_KEYS.STAFF_CALLS, []);
       broadcastSync('RESET');
     }
@@ -349,16 +352,7 @@ export class DemoPersistence {
       order.estimatedReadyAt = new Date(now.getTime() + prepMinutes * 60 * 1000).toISOString();
     } else if (params.status === 'completed') {
       order.completedAt = now.toISOString();
-      // Award loyalty points on completion (1 MAD = 1 pt)
-      if (!order.loyaltyPointsEarned && order.totalMAD > 0) {
-        order.loyaltyPointsEarned = order.totalMAD;
-        this.awardLoyaltyPoints(
-          order.restaurantId,
-          order.totalMAD,
-          `Points gagnés sur commande #${order.orderNumber}`,
-          order.id
-        );
-      }
+      // Points are only awarded by claiming a paid receipt, never automatically.
     } else if (params.status === 'rejected') {
       order.rejectionReason = params.rejectionReason || 'Cuisine en surcharge momentanée';
     }
@@ -405,6 +399,33 @@ export class DemoPersistence {
   }
 
   // --- CUSTOMER PROFILE & LOYALTY ---
+  public issueReceipt(orderId:string) {
+    const order=this.getRestaurants().flatMap(r=>this.getOrders(r.id)).find(o=>o.id===orderId);
+    if(!order||order.paymentStatus!=='paid'||['cancelled','rejected'].includes(order.status))throw new Error('Un ticket fidélité nécessite une commande payée et valide.');
+    if(order.loyaltyPointsEarned)throw new Error('Les points de cette commande ont déjà été crédités.');
+    const receipts=this.getItem<Array<{token:string;orderId:string;restaurantId:string;claimed:boolean}>>(STORAGE_KEYS.RECEIPTS,[]);
+    const previous=receipts.find(r=>r.orderId===orderId);
+    if(previous)return previous.token;
+    const token=crypto.randomUUID().replaceAll('-','').slice(0,20).toUpperCase();
+    receipts.push({token,orderId,restaurantId:order.restaurantId,claimed:false});
+    this.setItem(STORAGE_KEYS.RECEIPTS,receipts);return token;
+  }
+  public claimReceipt(restaurantId:string,input:string) {
+    let token=input.trim().toUpperCase();
+    if(input.trim().startsWith('http')){try{token=new URL(input.trim()).searchParams.get('receipt')?.toUpperCase()||'';}catch{throw new Error('Code invalide.');}}
+    const receipts=this.getItem<Array<{token:string;orderId:string;restaurantId:string;claimed:boolean}>>(STORAGE_KEYS.RECEIPTS,[]);
+    const receipt=receipts.find(r=>r.token===token&&r.restaurantId===restaurantId);
+    if(!receipt)throw new Error('Ticket inconnu dans ce navigateur de démonstration.');
+    const orders=this.getItem<Order[]>(STORAGE_KEYS.ORDERS,[]);const order=orders.find(o=>o.id===receipt.orderId);
+    if(!order||order.paymentStatus!=='paid'||['cancelled','rejected'].includes(order.status))throw new Error('Ce ticket n’est plus éligible : paiement annulé ou remboursé.');
+    if(receipt.claimed||order.loyaltyPointsEarned)throw new Error('Ce ticket a déjà été utilisé.');
+    const points=Math.floor(Math.max(0,order.totalMAD-order.deliveryFeeMAD));
+    if(points<1)throw new Error('Aucun point disponible pour ce ticket.');
+    receipt.claimed=true;order.loyaltyPointsEarned=points;
+    this.setItem(STORAGE_KEYS.RECEIPTS,receipts);this.setItem(STORAGE_KEYS.ORDERS,orders);
+    this.awardLoyaltyPoints(restaurantId,points,`Ticket #${order.orderNumber} scanné · règle de démonstration`,order.id);
+    broadcastSync('RECEIPT_CLAIMED');return points;
+  }
   public getCustomer(restaurantId: string): CustomerProfile {
     const stored = this.getItem<CustomerProfile>(STORAGE_KEYS.CUSTOMER, SEED_CUSTOMER);
     if (stored.restaurantId === restaurantId) return stored;

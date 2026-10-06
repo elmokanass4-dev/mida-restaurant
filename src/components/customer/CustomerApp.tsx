@@ -48,7 +48,7 @@ export const CustomerApp: React.FC<Props> = ({
   const t = getTranslation(language);
 
   // Navigation State
-  const [activeTab, setActiveTab] = useState<'home' | 'menu' | 'orders' | 'rewards' | 'profile'>('home');
+  const [activeTab, setActiveTab] = useState<'home' | 'menu' | 'orders' | 'rewards' | 'profile'>(new URLSearchParams(window.location.search).has('receipt')?'rewards':'home');
   const [deviceFrameMode, setDeviceFrameMode] = useState<boolean>(false);
 
   // Cart & Order State

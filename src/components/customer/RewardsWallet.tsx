@@ -3,6 +3,8 @@ import { CustomerProfile, Language, Restaurant, LoyaltyLedgerEntry } from '../..
 import { getTranslation } from '../../i18n/translations';
 import { storage } from '../../services/storageAdapter';
 import { Award, QrCode, Tag, Sparkles, Check, Clock, ChevronRight } from 'lucide-react';
+import {demoEnabled} from '../../services/api';
+import {ReceiptLoyaltyDemo} from './ReceiptLoyaltyDemo';
 
 interface Props {
   customer: CustomerProfile;
@@ -11,7 +13,8 @@ interface Props {
   onApplyOfferInCart?: (code: string) => void;
 }
 
-export const RewardsWallet: React.FC<Props> = ({
+export const RewardsWallet:React.FC<Props> = props=>demoEnabled?<ReceiptLoyaltyDemo customer={props.customer} restaurant={props.restaurant}/>:<LiveRewardsWallet {...props}/>;
+const LiveRewardsWallet: React.FC<Props> = ({
   customer,
   restaurant,
   language,
