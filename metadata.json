@@ -1,0 +1,6 @@
+{
+  "name": "Mida - Restaurant Ordering & Multi-Tenant Platform",
+  "description": "Multi-tenant restaurant SaaS for digital table QR ordering, pickup, delivery, loyalty, and staff operations in Morocco.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,19 @@
+{
+  "name": "Braise Burger | Mida Dining",
+  "short_name": "BraiseBurger",
+  "description": "Menu artisanal, commande à table, à emporter et livraison à Meknès.",
+  "start_url": "./?surface=customer&restaurant=braise-burger",
+  "display": "standalone",
+  "background_color": "#0d0709",
+  "theme_color": "#0d0709",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "./app-icon.jpg",
+      "sizes": "any",
+      "type": "image/jpeg",
+      "purpose": "any"
+    }
+  ],
+  "scope": "./"
+}
