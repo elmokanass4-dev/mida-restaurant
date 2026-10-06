@@ -7,4 +7,4 @@ const catalog=JSON.parse(await fs.readFile(new URL('./catalog/menu.json',import.
 const {app}=createApp({databasePath:process.env.DATABASE_PATH || './data/mida.sqlite',catalog,origin:process.env.APP_ORIGIN || `http://localhost:${port}`,production:process.env.NODE_ENV==='production'});
 app.use('/mida-restaurant',express.static(path.resolve('dist'),{index:'index.html'}));
 app.get('/',(_req,res)=>res.redirect('/mida-restaurant/'));
-app.listen(port,'0.0.0.0',()=>console.log(`Mida listening on port ${port}`));
+app.listen(port,process.env.HOST || (process.env.NODE_ENV==='production'?'0.0.0.0':'127.0.0.1'),()=>console.log(`Mida listening on port ${port}`));
