@@ -10,6 +10,14 @@ GitHub Pages serves the public menu preview only. Never enable `VITE_BACKEND_ENA
 - One app instance. Scaling to several instances requires migrating to a shared database.
 - Backups held privately outside the app disk. Do not commit or publish database files.
 
+## Prepared Render deployment
+
+`render.yaml` defines one Docker web service in Frankfurt using the paid `0.5c-512mb` plan and a 1 GB persistent disk. Applying the Blueprint incurs hosting charges; review Render billing first. Automatic redeploys are disabled so app updates can be reviewed before deploying.
+
+After signing in to Render, connect this repository and create a Blueprint from `main`. For `APP_ORIGIN`, use the exact HTTPS origin allocated to the web service, without a path. If that origin is not yet available when the Blueprint prompts for it, save a placeholder HTTPS origin, then replace it in the service Environment settings before using any login or ordering features. Confirm the final value matches the actual public host. Do not assume that a service name guarantees a particular URL.
+
+Verify `/api/health`, persistent disk write permissions for UID 1000, and a successful app restart before creating the first owner account. The container image and Render disk mount still need validation on the hosting service. Provision the owner using the private service shell and the stdin procedure below; owner credentials never belong in Blueprint YAML. Do not use the free compute plan with this SQLite deployment.
+
 On an existing Docker host:
 
 ```sh

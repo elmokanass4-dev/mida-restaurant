@@ -1,0 +1,25 @@
+# Creates a PAID service if applied in Render. Review billing before deployment.
+services:
+  - type: web
+    name: mida-restaurant
+    runtime: docker
+    repo: https://github.com/elmokanass4-dev/mida-restaurant
+    branch: main
+    plan: 0.5c-512mb
+    region: frankfurt
+    numInstances: 1
+    autoDeployTrigger: off
+    healthCheckPath: /api/health
+    disk:
+      name: mida-data
+      mountPath: /app/data
+      sizeGB: 1
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_PATH
+        value: /app/data/mida.sqlite
+      - key: TRUST_PROXY_HOPS
+        value: "1"
+      - key: APP_ORIGIN
+        sync: false
