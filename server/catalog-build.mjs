@@ -1,0 +1,10 @@
+import fs from 'node:fs/promises';
+import { build } from 'esbuild';
+let source = await fs.readFile('src/data/seedData.ts', 'utf8');
+source = source.replace(/import (menuImage\d+) from ['"]\.\.\/assets\/images\/([^'"]+)['"];?/g, (_, name, file) => `const ${name} = '/mida-restaurant/menu/${file}';`);
+const result = await build({stdin: {contents: source, loader: 'ts', resolveDir: process.cwd()}, bundle: true, write: false, format: 'esm'});
+const seed = await import(`data:text/javascript;base64,${Buffer.from(result.outputFiles[0].text).toString('base64')}`);
+await fs.mkdir('server/catalog', {recursive: true});
+await fs.mkdir('public/menu', {recursive: true});
+for (const file of await fs.readdir('src/assets/images')) await fs.copyFile(`src/assets/images/${file}`, `public/menu/${file}`);
+await fs.writeFile('server/catalog/menu.json', JSON.stringify({restaurants: seed.SEED_RESTAURANTS, categories: seed.SEED_CATEGORIES, dishes: seed.SEED_DISHES}, null, 2));

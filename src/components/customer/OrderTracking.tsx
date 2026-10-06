@@ -80,16 +80,16 @@ export const OrderTracking: React.FC<Props> = ({
   }
 
   // Handle Call Staff action (Bell / Bill)
-  const handleCallStaff = (type: 'call_waiter' | 'request_bill') => {
+  const handleCallStaff = async (type: 'call_waiter' | 'request_bill') => {
     if (!order.tableNumber) return;
     setIsCallingStaff(true);
-    const result = storage.submitStaffCall({
+    try { const result = await storage.submitStaffCall({
       restaurantId: restaurant.id,
       tableNumber: order.tableNumber,
       type
     });
 
-    setCallToast(result.message);
+    setCallToast(result.message); } catch(e) { setCallToast(e instanceof Error ? e.message : 'Demande impossible.'); }
     setIsCallingStaff(false);
     setTimeout(() => setCallToast(null), 4000);
   };

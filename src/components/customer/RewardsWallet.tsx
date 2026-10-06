@@ -32,6 +32,7 @@ export const RewardsWallet: React.FC<Props> = ({
 
   return (
     <div className="p-4 sm:p-5 max-w-lg mx-auto space-y-5 pb-24 text-neutral-100">
+      <p role="status" className="p-3 rounded-xl bg-amber-950/30 text-amber-200 text-xs">Les points sont enregistrés après paiement et service. Les échanges de points et promotions ne sont pas encore activés.</p>
       {/* Loyalty Card Header */}
       <div className="rounded-3xl bg-gradient-to-br from-[#2a131c] via-[#1a0a12] to-[#11050a] border border-amber-500/40 p-5 shadow-2xl relative overflow-hidden">
         <div className="absolute top-0 right-0 w-36 h-36 bg-amber-500/10 rounded-full blur-2xl pointer-events-none" />

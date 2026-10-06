@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { OrderItem, Language, Restaurant, OrderingMode, PaymentMethod, Order } from '../../types';
 import { getTranslation } from '../../i18n/translations';
+import { backendEnabled } from '../../services/api';
 import { storage } from '../../services/storageAdapter';
 import { X, Utensils, ShoppingBag, Bike, CreditCard, Banknote, Store, ShieldCheck, AlertCircle } from 'lucide-react';
 
@@ -25,21 +26,23 @@ export const CheckoutModal: React.FC<Props> = ({
   activeTableNumber,
   onOrderSuccess
 }) => {
-  if (!isOpen) return null;
+
   const t = getTranslation(language);
 
   const [mode, setMode] = useState<OrderingMode>(activeTableNumber ? 'table' : 'pickup');
   const [tableNum, setTableNum] = useState<number>(activeTableNumber || 1);
-  const [customerName, setCustomerName] = useState('Sarah Mansouri');
-  const [customerPhone, setCustomerPhone] = useState('+212 6 61 23 45 67');
-  const [deliveryAddress, setDeliveryAddress] = useState('Hamria, Boulevard Allal Ben Abdallah, Résidence Al Andalous, Appt 4');
+  const [customerName, setCustomerName] = useState('');
+  const [customerPhone, setCustomerPhone] = useState('');
+  const [deliveryAddress, setDeliveryAddress] = useState('');
   const [deliveryZoneId, setDeliveryZoneId] = useState<string>(restaurant.deliverySettings.zones[0]?.id || 'z1');
   const [customerNotes, setCustomerNotes] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('counter');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
-  // Server calculation preview
+  const [requestKey] = useState(() => crypto.randomUUID());
+  if (!isOpen) return null;
+  // Estimate; final prices are verified by the server.
   let calcResult;
   try {
     calcResult = storage.verifyAndCalculateOrder({
@@ -71,6 +74,7 @@ export const CheckoutModal: React.FC<Props> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isSubmitting) return;
+    if (!backendEnabled) { setSubmitError('Le service de commande n’est pas encore connecté.'); return; }
 
     if (!customerName.trim() || !customerPhone.trim()) {
       setSubmitError('Veuillez renseigner votre nom et votre numéro de téléphone.');
@@ -86,13 +90,13 @@ export const CheckoutModal: React.FC<Props> = ({
     setSubmitError(null);
 
     try {
-      const selectedTable = restaurant.tables.find((t) => t.tableNumber === tableNum);
 
-      const createdOrder = storage.submitOrder({
+
+      const createdOrder = await storage.submitOrder({
         restaurantId: restaurant.id,
         mode,
-        tableNumber: mode === 'table' ? tableNum : undefined,
-        tableSessionToken: mode === 'table' ? selectedTable?.sessionToken : undefined,
+        tableNumber: mode === 'table' ? activeTableNumber : undefined,
+        tableSessionToken: mode === 'table' ? new URLSearchParams(window.location.search).get('token') || undefined : undefined,
         customerName: customerName.trim(),
         customerPhone: customerPhone.trim(),
         deliveryAddress: mode === 'delivery' ? deliveryAddress.trim() : undefined,
@@ -108,7 +112,7 @@ export const CheckoutModal: React.FC<Props> = ({
         appliedOfferId: calcResult.appliedOfferId,
         paymentStatus: 'unpaid',
         paymentMethod
-      });
+      }, requestKey);
 
       onOrderSuccess(createdOrder);
     } catch (err: unknown) {
@@ -149,6 +153,7 @@ export const CheckoutModal: React.FC<Props> = ({
             <div className="grid grid-cols-3 gap-2">
               <button
                 type="button"
+                disabled={!activeTableNumber}
                 onClick={() => setMode('table')}
                 className={`py-3 px-2 rounded-2xl border flex flex-col items-center gap-1.5 transition-all ${
                   mode === 'table'
@@ -195,20 +200,10 @@ export const CheckoutModal: React.FC<Props> = ({
                 <span className="font-semibold text-amber-200">Choix de la Table</span>
                 <span className="text-[11px] text-amber-400 flex items-center gap-1 font-medium">
                   <ShieldCheck size={13} />
-                  Table vérifiée
+                  QR scanné · vérification à l’envoi
                 </span>
               </div>
-              <select
-                value={tableNum}
-                onChange={(e) => setTableNum(Number(e.target.value))}
-                className="w-full bg-neutral-900 border border-neutral-700 rounded-xl px-3 py-2 text-white font-medium focus:outline-none focus:border-amber-500"
-              >
-                {restaurant.tables.map((tbl) => (
-                  <option key={tbl.tableNumber} value={tbl.tableNumber}>
-                    {tbl.label} (Table #{tbl.tableNumber})
-                  </option>
-                ))}
-              </select>
+              <p className="font-bold text-white">Table #{activeTableNumber}</p>
             </div>
           )}
 
@@ -258,8 +253,9 @@ export const CheckoutModal: React.FC<Props> = ({
           {/* Customer contact */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="block text-neutral-400 font-medium mb-1">{t.name}</label>
+              <label htmlFor="checkout-name" className="block text-neutral-400 font-medium mb-1">{t.name}</label>
               <input
+                id="checkout-name"
                 type="text"
                 required
                 value={customerName}
@@ -268,8 +264,9 @@ export const CheckoutModal: React.FC<Props> = ({
               />
             </div>
             <div>
-              <label className="block text-neutral-400 font-medium mb-1">{t.phone}</label>
+              <label htmlFor="checkout-phone" className="block text-neutral-400 font-medium mb-1">{t.phone}</label>
               <input
+                id="checkout-phone"
                 type="tel"
                 required
                 value={customerPhone}
@@ -371,7 +368,7 @@ export const CheckoutModal: React.FC<Props> = ({
           {/* Submit button with idempotency guard */}
           <button
             type="submit"
-            disabled={isSubmitting}
+            disabled={isSubmitting || !backendEnabled || !storage.connected}
             className="w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 text-black font-bold text-xs sm:text-sm uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg shadow-amber-950/40 active:scale-[0.99] transition-all disabled:opacity-50"
           >
             {isSubmitting ? (

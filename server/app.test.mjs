@@ -1,0 +1,114 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import {randomUUID} from 'node:crypto';
+import {createApp} from './app.mjs';
+import {createUser} from './database.mjs';
+const catalog=JSON.parse(await fs.readFile(new URL('./catalog/menu.json',import.meta.url),'utf8'));
+const restaurantId=catalog.restaurants[0].id;
+const otherId=catalog.restaurants[1].id;
+const dish=catalog.dishes.find(d=>d.restaurantId===restaurantId&&d.isAvailable);
+const password='Test-only-secure-Password-938!';
+function orderData(){return {restaurantId,mode:'pickup',customerName:'Test Customer',customerPhone:'+212600000000',paymentMethod:'counter',paymentStatus:'paid',totalMAD:1,expectedTotalMAD:dish.priceMAD+dish.modifierGroups.reduce((sum,g)=>sum+g.options.slice(0,Math.max(g.minSelections,g.required?1:0)).reduce((s,o)=>s+o.priceMAD,0),0),items:[{dishId:dish.id,quantity:1,selectedModifiers:dish.modifierGroups.flatMap(g=>g.options.slice(0,Math.max(g.minSelections,g.required?1:0)).map(o=>({groupId:g.id,optionId:o.id,priceMAD:-999}))),unitPriceMAD:1,lineTotalMAD:1}]};}
+async function setup(t,databasePath=':memory:'){
+  const {app,store}=createApp({databasePath,catalog,origin:'http://localhost'});
+  const server=app.listen(0,'127.0.0.1'); await new Promise(resolve=>server.once('listening',resolve));
+  let closed=false;
+  const close=()=>closed?Promise.resolve():new Promise(resolve=>{closed=true;server.closeAllConnections();server.close(()=>{store.db.close();resolve();});});
+  t.after(close);
+  const base=`http://127.0.0.1:${server.address().port}`;
+  const client=()=>{let cookie='';return {request:async(url,method='GET',body,headers={})=>{
+    const response=await fetch(base+'/api'+url,{method,headers:{cookie,Origin:'http://localhost','X-Mida-Request':'1','Content-Type':'application/json',...headers},body:body===undefined?undefined:JSON.stringify(body)});
+    if(response.headers.getSetCookie().length)cookie=response.headers.getSetCookie().at(-1).split(';')[0];
+    return {status:response.status,body:await response.json(),cookie:response.headers.get('set-cookie')};
+  }};};
+  const staff=async(role,restaurant=restaurantId)=>{
+    const email=`${role}-${randomUUID()}@example.test`;
+    await createUser(store,{email,password,role,restaurantId:restaurant});
+    const c=client(); const result=await c.request('/login','POST',{email,password});assert.equal(result.status,200);return c;
+  };
+  return {store,client,staff,close};
+}
+test('public customers have private identities; prices and payments are authoritative; retries are idempotent',async t=>{
+  const {client}=await setup(t);const a=client(),b=client();
+  const snapshot=await a.request('/snapshot');assert.equal(snapshot.body.orders.length,0);assert.equal(snapshot.body.restaurants[0].tables.length,0);assert.equal(snapshot.body.customers[0].phone,'');
+  const data=orderData(),key=randomUUID();
+  const placed=await a.request('/orders','POST',data,{'Idempotency-Key':key});assert.equal(placed.status,201);assert.ok(placed.body.totalMAD>=dish.priceMAD);assert.equal(placed.body.paymentStatus,'unpaid');assert.equal(placed.body.status,'submitted');assert.ok(placed.body.secureRef.length>=40);
+  const retried=await a.request('/orders','POST',data,{'Idempotency-Key':key});assert.equal(retried.body.id,placed.body.id);
+  assert.equal((await a.request('/orders','POST',{...data,customerName:'changed'},{'Idempotency-Key':key})).status,409);
+  assert.equal((await b.request('/snapshot')).body.orders.length,0);
+  assert.equal((await a.request('/snapshot')).body.orders.length,1);
+  assert.equal((await b.request(`/orders/${placed.body.id}/status`,'PATCH',{status:'accepted'})).status,401);
+  assert.equal((await b.request(`/orders/${placed.body.id}/payment`,'PATCH',{paymentStatus:'paid'})).status,401);
+  assert.equal((await a.request('/snapshot')).body.orders[0].tableSessionToken,undefined);
+});
+test('tenant isolation and role enforcement survive crafted requests',async t=>{
+  const {client,staff}=await setup(t);const customer=client();
+  const placed=await customer.request('/orders','POST',orderData(),{'Idempotency-Key':randomUUID()});
+  const other=await staff('owner',otherId),kitchen=await staff('kitchen'),cashier=await staff('cashier'),owner=await staff('owner');
+  assert.equal((await other.request('/snapshot')).body.orders.length,0);
+  assert.equal((await other.request(`/orders/${placed.body.id}/status`,'PATCH',{status:'accepted'})).status,403);
+  assert.equal((await other.request(`/dishes/${dish.id}/availability`,'PATCH',{isAvailable:false})).status,403);
+  assert.equal((await kitchen.request(`/orders/${placed.body.id}/payment`,'PATCH',{paymentStatus:'paid'})).status,403);
+  assert.equal((await kitchen.request('/snapshot')).body.orders[0].customerPhone,undefined);
+  assert.equal((await cashier.request(`/dishes/${dish.id}/availability`,'PATCH',{isAvailable:false})).status,403);
+  assert.equal((await kitchen.request(`/orders/${placed.body.id}/status`,'PATCH',{status:'accepted',prepMinutesAdded:20})).status,200);
+  assert.equal((await kitchen.request(`/orders/${placed.body.id}/status`,'PATCH',{status:'completed'})).status,409);
+  assert.equal((await kitchen.request(`/orders/${placed.body.id}/status`,'PATCH',{status:'preparing'})).status,200);
+  assert.equal((await kitchen.request(`/orders/${placed.body.id}/status`,'PATCH',{status:'ready'})).status,200);
+  assert.equal((await owner.request(`/orders/${placed.body.id}/status`,'PATCH',{status:'completed'})).status,409);
+  assert.equal((await cashier.request(`/orders/${placed.body.id}/payment`,'PATCH',{paymentStatus:'paid'})).status,200);
+  assert.equal((await owner.request(`/orders/${placed.body.id}/status`,'PATCH',{status:'completed'})).status,200);
+  const profile=(await customer.request('/snapshot')).body.customers.find(c=>c.restaurantId===restaurantId);assert.ok(profile.loyaltyPoints>0);
+  assert.equal((await owner.request(`/orders/${placed.body.id}/status`,'PATCH',{status:'completed'})).status,409);
+  assert.equal((await cashier.request(`/orders/${placed.body.id}/payment`,'PATCH',{paymentStatus:'refunded',refundReason:'test'})).status,403);
+  assert.equal((await owner.request(`/orders/${placed.body.id}/payment`,'PATCH',{paymentStatus:'refunded',refundReason:'test'})).status,200);
+  assert.equal((await customer.request('/snapshot')).body.customers.find(c=>c.restaurantId===restaurantId).loyaltyPoints,0);
+});
+test('validation rejects tampered baskets, unavailable dishes, table tokens and online payments',async t=>{
+  const {client,staff,store}=await setup(t);const c=client();
+  const submit=data=>c.request('/orders','POST',data,{'Idempotency-Key':randomUUID()});
+  const data=orderData();
+  assert.equal((await submit({...data,items:[{...data.items[0],quantity:-1}]})).status,400);
+  assert.equal((await submit({...data,items:[{...data.items[0],selectedModifiers:[{groupId:'fake',optionId:'fake'}]}]})).status,400);
+  assert.equal((await submit({...data,items:[{...data.items[0],dishId:catalog.dishes.find(d=>d.restaurantId===otherId).id}]})).status,409);
+  assert.equal((await submit({...data,paymentMethod:'online_gateway'})).status,400);
+  assert.equal((await submit({...data,expectedTotalMAD:1})).status,409);
+  assert.equal((await submit({...data,items:[null]})).status,400);
+  assert.equal((await submit({...data,mode:'table',tableNumber:1,tableSessionToken:'fake'})).status,403);
+  const table=store.read('restaurant',restaurantId).data.tables[0];
+  const tableOrder=await submit({...data,mode:'table',tableNumber:table.tableNumber,tableSessionToken:table.sessionToken});assert.equal(tableOrder.status,201);
+  assert.equal((await c.request('/calls','POST',{restaurantId,tableNumber:table.tableNumber,type:'call_waiter'})).status,200);
+  assert.equal((await c.request('/calls','POST',{restaurantId,tableNumber:table.tableNumber,type:'call_waiter'})).status,429);
+  assert.equal((await client().request('/calls','POST',{restaurantId,tableNumber:table.tableNumber,type:'request_bill'})).status,403);
+  const kitchen=await staff('kitchen');await kitchen.request(`/dishes/${dish.id}/availability`,'PATCH',{isAvailable:false});assert.equal((await submit(data)).status,409);
+});
+test('sessions rotate; CSRF is blocked; staff provisioning is restricted and revocation is immediate',async t=>{
+  const {client,staff,store}=await setup(t);const c=client();
+  const before=await c.request('/snapshot');assert.match(before.cookie,/HttpOnly/);assert.match(before.cookie,/SameSite=Strict/);
+  assert.equal((await c.request('/logout','POST',{}, {Origin:'https://evil.example'})).status,403);
+  assert.equal((await c.request('/logout','POST',{}, {'X-Mida-Request':''})).status,403);
+  assert.equal((await c.request('/login','POST',{email:'none@example.test',password:'incorrect'})).status,401);
+  const owner=await staff('owner'),manager=await staff('manager');
+  const ownerAccount=(await owner.request('/snapshot')).body.user;
+  const otherSession=client();assert.equal((await otherSession.request('/login','POST',{email:ownerAccount.email,password})).status,200);
+  const passwordChange=await owner.request('/password','POST',{currentPassword:password,newPassword:password+'new'});assert.equal(passwordChange.status,200);
+  assert.equal((await otherSession.request('/snapshot')).body.user,null);
+  assert.equal((await manager.request('/users','POST',{email:'new@example.test',password,role:'kitchen',restaurantId})).status,403);
+  assert.equal((await owner.request('/users','POST',{email:'admin@example.test',password,role:'platform_admin',restaurantId})).status,403);
+  const email='kitchen@example.test';const created=await owner.request('/users','POST',{email,password,role:'kitchen',restaurantId});assert.equal(created.status,201);
+  const employee=client();assert.equal((await employee.request('/login','POST',{email,password})).status,200);
+  assert.equal((await owner.request(`/users/${created.body.id}`,'PATCH',{active:false})).status,200);
+  assert.equal((await employee.request('/snapshot')).body.user,null);
+  const exited=await owner.request('/logout','POST');assert.equal(exited.status,200);assert.equal((await owner.request('/snapshot')).body.user,null);
+  assert.ok(store.db.prepare('SELECT COUNT(*) AS n FROM audit').get().n>0);
+});
+test('orders persist after a database is reopened',async t=>{
+  const directory=await fs.mkdtemp(path.join(os.tmpdir(),'mida-test-'));const file=path.join(directory,'mida.sqlite');
+  const first=await setup(t,file);const result=await first.client().request('/orders','POST',orderData(),{'Idempotency-Key':randomUUID()});assert.equal(result.status,201);
+  await first.close();
+  const second=await setup(t,file);assert.equal(second.store.list('order')[0].data.id,result.body.id);
+  t.after(()=>fs.rm(directory,{recursive:true,force:true}));
+});

@@ -1,326 +1,59 @@
-import React, { useState, useEffect } from 'react';
-import { Language, Restaurant } from './types';
-import { storage, SYNC_EVENT_NAME } from './services/storageAdapter';
-import { BRAISE_BURGER_ID } from './data/seedData';
-import { CustomerApp } from './components/customer/CustomerApp';
-import { StaffDashboard } from './components/staff/StaffDashboard';
-import { PlatformAdmin } from './components/platform/PlatformAdmin';
-import {
-  Smartphone,
-  ChefHat,
-  Building2,
-  Globe,
-  RotateCcw,
-  QrCode,
-  Info,
-  ShieldCheck,
-  ChevronDown
-} from 'lucide-react';
-
-type AppSurface = 'customer' | 'staff' | 'platform';
-
-export default function App() {
-  const [currentSurface, setCurrentSurface] = useState<AppSurface>('customer');
-  const [selectedRestaurantId, setSelectedRestaurantId] = useState<string>(BRAISE_BURGER_ID);
-  const [language, setLanguage] = useState<Language>('fr');
-  const [simulatedTable, setSimulatedTable] = useState<number | undefined>(3); // Table 3 scanned by default in demo
-  const [showDemoInfo, setShowDemoInfo] = useState(false);
-  const [showMobileModal, setShowMobileModal] = useState(false);
-  const [linkCopied, setLinkCopied] = useState(false);
-
-  // Read URL query params on mount for direct deep linking e.g. ?surface=staff or ?table=2
-  useEffect(() => {
-    try {
-      const urlParams = new URLSearchParams(window.location.search);
-      const surfaceParam = urlParams.get('surface');
-      if (surfaceParam === 'staff' || surfaceParam === 'platform' || surfaceParam === 'customer') {
-        setCurrentSurface(surfaceParam as AppSurface);
-      }
-      const restaurantParam = urlParams.get('restaurant');
-      if (restaurantParam && storage.getRestaurants().some(r => r.id === restaurantParam)) setSelectedRestaurantId(restaurantParam);
-      const tableParam = urlParams.get('table');
-      if (tableParam) {
-        setSimulatedTable(Number(tableParam));
-      }
-      const langParam = urlParams.get('lang');
-      if (langParam === 'ar' || langParam === 'en' || langParam === 'fr') {
-        setLanguage(langParam as Language);
-      }
-    } catch (e) {
-      // Ignore query param error
-    }
-  }, []);
-
-  // Set RTL direction attribute on document HTML element
-  useEffect(() => {
-    if (language === 'ar') {
-      document.documentElement.setAttribute('dir', 'rtl');
-      document.documentElement.setAttribute('lang', 'ar');
-    } else {
-      document.documentElement.setAttribute('dir', 'ltr');
-      document.documentElement.setAttribute('lang', language);
-    }
-  }, [language]);
-
-  const restaurants = storage.getRestaurants();
-  const currentRestaurant =
-    restaurants.find((r) => r.id === selectedRestaurantId) || restaurants[0];
-
-  const mobileUrl = new URL(import.meta.env.BASE_URL, window.location.origin);
-  mobileUrl.searchParams.set('surface', 'customer');
-  mobileUrl.searchParams.set('restaurant', selectedRestaurantId);
-  mobileUrl.searchParams.set('lang', language);
-  if (simulatedTable) mobileUrl.searchParams.set('table', String(simulatedTable));
-
-  return (
-    <div className="min-h-screen bg-[#080305] text-neutral-100 flex flex-col font-sans">
-      {/* Top Universal Mida Switcher Bar */}
-      <nav
-        aria-label="Navigation surfaces Mida"
-        className="bg-[#11060b] border-b border-amber-950/60 px-3 py-2 flex flex-wrap items-center justify-between gap-2 text-xs sticky top-0 z-50 shadow-md backdrop-blur-md"
-      >
-        {/* Surface Switcher Buttons */}
-        <div className="flex items-center gap-1.5 p-1 bg-neutral-900/80 rounded-xl border border-neutral-800">
-          <button
-            onClick={() => setCurrentSurface('customer')}
-            className={`px-3 py-1.5 rounded-lg font-bold text-xs flex items-center gap-1.5 transition-all ${
-              currentSurface === 'customer'
-                ? 'bg-amber-600 text-black shadow-sm'
-                : 'text-neutral-400 hover:text-white'
-            }`}
-          >
-            <Smartphone size={14} />
-            <span>App Client</span>
-          </button>
-
-          <button
-            onClick={() => setCurrentSurface('staff')}
-            className={`px-3 py-1.5 rounded-lg font-bold text-xs flex items-center gap-1.5 transition-all ${
-              currentSurface === 'staff'
-                ? 'bg-amber-600 text-black shadow-sm'
-                : 'text-neutral-400 hover:text-white'
-            }`}
-          >
-            <ChefHat size={14} />
-            <span>Écran Staff / Cuisine</span>
-          </button>
-
-          <button
-            onClick={() => setCurrentSurface('platform')}
-            className={`px-3 py-1.5 rounded-lg font-bold text-xs flex items-center gap-1.5 transition-all ${
-              currentSurface === 'platform'
-                ? 'bg-amber-600 text-black shadow-sm'
-                : 'text-neutral-400 hover:text-white'
-            }`}
-          >
-            <Building2 size={14} />
-            <span className="hidden sm:inline">Plateforme SaaS</span>
-          </button>
-        </div>
-
-        {/* Tenant selector & Demo controls */}
-        <div className="flex items-center gap-2">
-          {/* Restaurant Tenant Switcher */}
-          <select
-            value={selectedRestaurantId}
-            onChange={(e) => setSelectedRestaurantId(e.target.value)}
-            className="bg-neutral-900 border border-neutral-800 rounded-lg px-2.5 py-1.5 text-xs text-white font-medium focus:outline-none focus:border-amber-500"
-          >
-            {restaurants.map((r) => (
-              <option key={r.id} value={r.id}>
-                {r.name} ({r.city})
-              </option>
-            ))}
-          </select>
-
-          {/* Table QR Simulation (for customer view) */}
-          {currentSurface === 'customer' && (
-            <div className="hidden md:flex items-center gap-1 bg-neutral-900/90 border border-neutral-800 px-2 py-1 rounded-lg">
-              <QrCode size={13} className="text-amber-400" />
-              <select
-                value={simulatedTable || ''}
-                onChange={(e) =>
-                  setSimulatedTable(e.target.value ? Number(e.target.value) : undefined)
-                }
-                className="bg-transparent text-[11px] text-neutral-300 focus:outline-none cursor-pointer"
-              >
-                <option value="" className="bg-neutral-900 text-white">Sans QR (À emporter / Livraison)</option>
-                <option value="1" className="bg-neutral-900 text-white">Scan QR Table #1 (Terrasse)</option>
-                <option value="2" className="bg-neutral-900 text-white">Scan QR Table #2 (RDC)</option>
-                <option value="3" className="bg-neutral-900 text-white">Scan QR Table #3 (Banquette)</option>
-                <option value="4" className="bg-neutral-900 text-white">Scan QR Table #4 (Famille)</option>
-                <option value="5" className="bg-neutral-900 text-white">Scan QR Table #5 (Mezzanine)</option>
-                <option value="6" className="bg-neutral-900 text-white">Scan QR Table #6 (Verrière)</option>
-              </select>
-            </div>
-          )}
-
-          {/* Language Switcher */}
-          <div className="flex items-center gap-1 bg-neutral-900 border border-neutral-800 rounded-lg p-0.5">
-            {(['fr', 'ar', 'en'] as Language[]).map((l) => (
-              <button
-                key={l}
-                onClick={() => setLanguage(l)}
-                className={`px-2 py-1 rounded text-[10px] font-bold uppercase transition-colors ${
-                  language === l ? 'bg-amber-500 text-black' : 'text-neutral-400 hover:text-white'
-                }`}
-              >
-                {l}
-              </button>
-            ))}
-          </div>
-
-          {/* Test on Phone link button */}
-          <button
-            onClick={() => setShowMobileModal(true)}
-            className="px-2.5 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/50 text-amber-300 font-bold text-xs flex items-center gap-1.5 transition-all shadow-sm"
-            title="Tester sur mon téléphone (Lien & QR code)"
-          >
-            <Smartphone size={14} className="text-amber-400" />
-            <span className="hidden sm:inline">Lien Mobile</span>
-            <span className="sm:hidden">Mobile</span>
-          </button>
-
-          {/* Demo info popup toggle */}
-          <button
-            onClick={() => setShowDemoInfo(!showDemoInfo)}
-            className="p-1.5 rounded-lg bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 text-neutral-400 hover:text-amber-300"
-            title="Détails du mode Démo Mida"
-          >
-            <Info size={15} />
-          </button>
-        </div>
-      </nav>
-
-      {/* Mobile Link & QR Modal */}
-      {showMobileModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-sm p-4 animate-in fade-in duration-150">
-          <div
-            className="w-full max-w-sm bg-[#160b11] border border-amber-600/40 rounded-3xl p-5 text-neutral-100 shadow-2xl relative"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-start justify-between mb-3">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-300">
-                  <Smartphone size={18} />
-                </div>
-                <div>
-                  <h3 className="font-bold text-sm text-white">Tester sur votre smartphone</h3>
-                  <p className="text-[11px] text-neutral-400">Application PWA Mida</p>
-                </div>
-              </div>
-              <button
-                onClick={() => setShowMobileModal(false)}
-                className="w-7 h-7 rounded-full bg-neutral-900 border border-neutral-800 flex items-center justify-center text-neutral-400 hover:text-white"
-              >
-                ✕
-              </button>
-            </div>
-
-            {/* QR Code Container */}
-            <div className="my-4 p-4 rounded-2xl bg-white text-black flex flex-col items-center justify-center shadow-lg">
-              <img
-                src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(
-                  mobileUrl.href
-                )}`}
-                alt="QR Code pour smartphone"
-                className="w-40 h-40 rounded"
-              />
-              <p className="text-[11px] font-bold text-neutral-800 mt-2">
-                Scannez avec l'appareil photo de votre téléphone
-              </p>
-            </div>
-
-            {/* Direct Link box */}
-            <div className="space-y-2">
-              <label className="text-[11px] text-neutral-400 font-medium block">
-                Ou copiez le lien direct ci-dessous :
-              </label>
-              <div className="flex items-center gap-2">
-                <input
-                  type="text"
-                  readOnly
-                  value={mobileUrl.href}
-                  className="w-full bg-neutral-900/90 border border-neutral-800 rounded-xl px-2.5 py-2 text-[11px] font-mono text-amber-300 truncate focus:outline-none"
-                />
-                <button
-                  onClick={() => {
-                    navigator.clipboard?.writeText(
-                      mobileUrl.href
-                    );
-                    setLinkCopied(true);
-                    setTimeout(() => setLinkCopied(false), 2000);
-                  }}
-                  className="px-3 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-black font-extrabold text-xs whitespace-nowrap transition-colors"
-                >
-                  {linkCopied ? 'Copié !' : 'Copier'}
-                </button>
-              </div>
-
-              <a
-                href={mobileUrl.href}
-                target="_blank"
-                rel="noreferrer"
-                className="w-full py-2.5 px-4 mt-2 rounded-xl bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-colors block text-center"
-              >
-                Ouvrir directement dans un nouvel onglet ↗
-              </a>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Demo Mode Notice Drawer / Banner */}
-      {showDemoInfo && (
-        <div className="bg-[#1b0d14] border-b border-amber-950 px-4 py-3 text-xs text-neutral-300 flex items-start justify-between gap-4 animate-in fade-in">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2 font-bold text-amber-300">
-              <ShieldCheck size={16} />
-              <span>Environnement Mida — Démonstration Opérationnelle & Données Persistantes</span>
-            </div>
-            <p className="text-neutral-400 leading-relaxed text-[11px] max-w-3xl">
-              Les enregistrements (commandes, points de fidélité, modifications de carte, appels serveurs) sont persistés localement dans le navigateur.
-              Toute commande passée dans l'App Client est synchronisée en temps réel avec l'Écran Staff Cuisine.
-              Devise : <strong>MAD (Dirham Marocain)</strong> · Fuseau : <strong>Africa/Casablanca</strong>.
-            </p>
-          </div>
-          <button
-            onClick={() => setShowDemoInfo(false)}
-            className="text-neutral-400 hover:text-white font-bold px-2 py-1 bg-neutral-900 rounded"
-          >
-            ✕
-          </button>
-        </div>
-      )}
-
-      {/* Surface Render */}
-      <main className="flex-1 flex flex-col">
-        {currentSurface === 'customer' && (
-          <CustomerApp
-            restaurant={currentRestaurant}
-            language={language}
-            onLanguageChange={setLanguage}
-            activeTableNumber={simulatedTable}
-          />
-        )}
-
-        {currentSurface === 'staff' && (
-          <StaffDashboard
-            restaurant={currentRestaurant}
-            onSwitchToCustomerView={() => setCurrentSurface('customer')}
-          />
-        )}
-
-        {currentSurface === 'platform' && (
-          <PlatformAdmin
-            restaurants={restaurants}
-            currentRestaurantId={selectedRestaurantId}
-            onSelectRestaurant={(id) => setSelectedRestaurantId(id)}
-            onNavigateToCustomer={() => setCurrentSurface('customer')}
-            onNavigateToStaff={() => setCurrentSurface('staff')}
-          />
-        )}
-      </main>
-    </div>
-  );
+import React,{useState,useEffect} from 'react';
+import {Language} from './types';
+import {storage,SYNC_EVENT_NAME,ERROR_EVENT_NAME} from './services/storageAdapter';
+import {backendEnabled} from './services/api';
+import {CustomerApp} from './components/customer/CustomerApp';
+import {StaffDashboard} from './components/staff/StaffDashboard';
+import {PlatformAdmin} from './components/platform/PlatformAdmin';
+import {StaffLogin} from './components/StaffLogin';
+import {TeamManagement} from './components/TeamManagement';
+import {PasswordChange} from './components/PasswordChange';
+type Surface='customer'|'staff'|'platform'|'team';
+const params=new URLSearchParams(window.location.search);
+export default function App(){
+  const [surface,setSurface]=useState<Surface>(params.get('surface')==='platform'?'platform':params.get('surface')==='staff'?'staff':'customer');
+  const [restaurantId,setRestaurantId]=useState(params.get('restaurant')||'braise-burger');
+  const [language,setLanguage]=useState<Language>(['fr','ar','en'].includes(params.get('lang')||'')?params.get('lang') as Language:'fr');
+  const [,render]=useState(0),[error,setError]=useState(''),[ready,setReady]=useState(!backendEnabled);
+  useEffect(()=>{
+    let alive=true,pending=false;
+    const sync=()=>{if(alive)render(n=>n+1);};
+    const showError=(e:Event)=>{if(alive)setError((e as CustomEvent).detail);};
+    const refresh=async()=>{if(pending)return;pending=true;try{await storage.refresh();if(alive){setReady(true);setError('');}}catch{if(alive){setReady(true);setError('Connexion interrompue. Les commandes ne peuvent pas être confirmées tant que le service est indisponible.');}}finally{pending=false;}};
+    window.addEventListener(SYNC_EVENT_NAME,sync);window.addEventListener(ERROR_EVENT_NAME,showError);
+    if(backendEnabled)refresh();
+    const timer=window.setInterval(()=>{if(backendEnabled)refresh();},5000);
+    return()=>{alive=false;clearInterval(timer);window.removeEventListener(SYNC_EVENT_NAME,sync);window.removeEventListener(ERROR_EVENT_NAME,showError);};
+  },[]);
+  useEffect(()=>{document.documentElement.dir=language==='ar'?'rtl':'ltr';document.documentElement.lang=language;},[language]);
+  const user=storage.user;
+  const restaurants=storage.getRestaurants();
+  const selectable=user?.role==='platform_admin'?restaurants:restaurants.filter(r=>r.id===(user?.restaurantId||restaurantId));
+  const restaurant=restaurants.find(r=>r.id===(user&&surface!=='customer'&&user.role!=='platform_admin'?user.restaurantId:restaurantId))||restaurants[0];
+  const canManageTeam=user?.role==='owner'||user?.role==='platform_admin';
+  const protectedSurface=surface!=='customer';
+  if(!ready)return <div className="min-h-screen bg-[#080305] text-white p-8" role="status">Connexion au restaurant…</div>;
+  if(protectedSurface&&!user)return <StaffLogin onSuccess={()=>{setRestaurantId(storage.user?.restaurantId||restaurantId);setSurface(storage.user?.role==='platform_admin'?'platform':'staff');}}/>;
+  const allowedSurface=surface==='platform'&&user?.role!=='platform_admin'||surface==='team'&&!canManageTeam?'staff':surface;
+  const table=Number(params.get('table'));
+  const activeTable=Number.isInteger(table)&&table>0&&params.get('token')?table:undefined;
+  return <div className="min-h-screen bg-[#080305] text-neutral-100 flex flex-col">
+    {user&&<nav aria-label="Navigation de l’équipe" className="p-3 bg-neutral-950 border-b border-neutral-800 flex flex-wrap items-center gap-3 text-sm">
+      <button onClick={()=>setSurface('customer')} className="text-amber-300">Menu client</button>
+      <button onClick={()=>setSurface('staff')} className="text-amber-300">Écran Staff / Cuisine</button>
+      {user.role==='platform_admin'&&<button onClick={()=>setSurface('platform')} className="text-amber-300">Plateforme SaaS</button>}
+      {canManageTeam&&<button onClick={()=>setSurface('team')} className="text-amber-300">Équipe</button>}
+      {user.role==='platform_admin'&&<select aria-label="Restaurant" value={restaurant.id} onChange={e=>setRestaurantId(e.target.value)} className="bg-neutral-900 p-2 rounded">{selectable.map(r=><option key={r.id} value={r.id}>{r.name}</option>)}</select>}
+      <span className="ml-auto text-neutral-400">{user.email} · {user.role}</span>
+      <PasswordChange/>
+      <button onClick={()=>storage.logout().then(()=>{setSurface('customer');setError('');}).catch(e=>storage.report(e))} className="underline">Déconnexion</button>
+    </nav>}
+    {!backendEnabled&&<p role="status" className="p-3 bg-amber-950/40 text-amber-200 text-center text-sm">Aperçu du menu · Les commandes en ligne seront disponibles après l’activation du service.</p>}
+    {error&&<div role="alert" className="bg-red-950 text-red-200 p-3 flex justify-between gap-3">{error}<button aria-label="Fermer le message" onClick={()=>setError('')}>×</button></div>}
+    {allowedSurface==='customer'&&<CustomerApp key={restaurant.id} restaurant={restaurant} language={language} onLanguageChange={setLanguage} activeTableNumber={activeTable}/>}
+    {allowedSurface==='staff'&&user&&<StaffDashboard key={`${restaurant.id}:${user.role}`} restaurant={restaurant} onSwitchToCustomerView={()=>setSurface('customer')}/>}
+    {allowedSurface==='team'&&canManageTeam&&<TeamManagement key={restaurant.id} restaurantId={restaurant.id}/>}
+    {allowedSurface==='platform'&&user?.role==='platform_admin'&&<PlatformAdmin restaurants={restaurants} currentRestaurantId={restaurant.id} onSelectRestaurant={setRestaurantId} onNavigateToCustomer={()=>setSurface('customer')} onNavigateToStaff={()=>setSurface('staff')}/>}
+    {!user&&surface==='customer'&&<footer className="p-5 text-center text-xs text-neutral-500"><a href={`${import.meta.env.BASE_URL}?surface=staff&restaurant=${encodeURIComponent(restaurant.id)}`}>Espace équipe</a></footer>}
+  </div>;
 }

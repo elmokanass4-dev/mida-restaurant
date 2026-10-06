@@ -57,7 +57,7 @@ export const CustomerApp: React.FC<Props> = ({
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
   const [selectedDishForModal, setSelectedDishForModal] = useState<Dish | null>(null);
   const [activeOrderRef, setActiveOrderRef] = useState<string | null>(initialOrderRef || null);
-  const [appliedPromoCode, setAppliedPromoCode] = useState<string | undefined>('RETOUR15');
+  const [appliedPromoCode, setAppliedPromoCode] = useState<string | undefined>(undefined);
 
   // Customer & Store Data
   const [customer, setCustomer] = useState<CustomerProfile>(() => storage.getCustomer(restaurant.id));
@@ -102,6 +102,7 @@ export const CustomerApp: React.FC<Props> = ({
   };
 
   const handleQuickAdd = (dish: Dish) => {
+    if (dish.modifierGroups.some(g => g.required || g.minSelections > 0)) { setSelectedDishForModal(dish); return; }
     const quickItem: OrderItem = {
       dishId: dish.id,
       dishName: dish.name[language] || dish.name.fr,
@@ -438,12 +439,13 @@ export const CustomerApp: React.FC<Props> = ({
       </div>
 
       {/* Dish Detail Modal */}
-      <DishDetailModal
+      {selectedDishForModal && <DishDetailModal
+        key={selectedDishForModal.id}
         dish={selectedDishForModal}
         language={language}
         onClose={() => setSelectedDishForModal(null)}
         onAddToCart={handleAddToCart}
-      />
+      />}
 
       {/* Cart Drawer */}
       <CartDrawer
@@ -461,7 +463,7 @@ export const CustomerApp: React.FC<Props> = ({
       />
 
       {/* Checkout Modal */}
-      <CheckoutModal
+      {isCheckoutOpen && <CheckoutModal
         isOpen={isCheckoutOpen}
         onClose={() => setIsCheckoutOpen(false)}
         items={cartItems}
@@ -470,7 +472,7 @@ export const CustomerApp: React.FC<Props> = ({
         appliedPromoCode={appliedPromoCode}
         activeTableNumber={activeTableNumber}
         onOrderSuccess={handleOrderSuccess}
-      />
+      />}
     </div>
   );
 };

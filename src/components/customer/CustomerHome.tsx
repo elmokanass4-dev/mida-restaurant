@@ -74,7 +74,7 @@ export const CustomerHome: React.FC<Props> = ({
       {/* Greetings section matching reference image */}
       <div className="px-5 pt-2">
         <div className="text-neutral-400 text-xs sm:text-sm font-medium tracking-wide">
-          {t.welcomeBack}, <span className="text-amber-300 font-semibold">Sarah</span> !
+          {t.welcomeBack} !
         </div>
         <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight mt-0.5 font-sans leading-tight">
           {t.cravingHeadline}

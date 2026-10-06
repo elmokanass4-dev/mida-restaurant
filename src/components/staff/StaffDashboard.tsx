@@ -51,6 +51,12 @@ export const StaffDashboard: React.FC<Props> = ({ restaurant, onSwitchToCustomer
   const [soundEnabled, setSoundEnabled] = useState(false);
   const [ticketOrder, setTicketOrder] = useState<Order | null>(null);
 
+  const role = storage.user?.role;
+  const canPay = ['owner','manager','cashier','waiter','platform_admin'].includes(role || '');
+  const canManage = ['owner','manager','platform_admin'].includes(role || '');
+  const canEditMenu = canManage || role === 'kitchen';
+  const run = (action: Promise<unknown>) => action.catch(e => storage.report(e));
+
   // Live state
   const [orders, setOrders] = useState<Order[]>(() => storage.getOrders(restaurant.id));
   const [dishes, setDishes] = useState<Dish[]>(() => storage.getDishes(restaurant.id));
@@ -108,67 +114,67 @@ export const StaffDashboard: React.FC<Props> = ({ restaurant, onSwitchToCustomer
 
   // Order status actions
   const handleAcceptOrder = (order: Order, minutes = 20) => {
-    storage.updateOrderStatus({
+    run(storage.updateOrderStatus({
       orderId: order.id,
       status: 'accepted',
       staffAttribution: 'Staff Cuisine',
       prepMinutesAdded: minutes
-    });
+    }));
   };
 
   const handleStartPrep = (order: Order) => {
-    storage.updateOrderStatus({
+    run(storage.updateOrderStatus({
       orderId: order.id,
       status: 'preparing',
       staffAttribution: 'Chef Grille'
-    });
+    }));
   };
 
   const handleMarkReady = (order: Order) => {
     const nextStatus = order.mode === 'delivery' ? 'out_for_delivery' : 'ready';
-    storage.updateOrderStatus({
+    run(storage.updateOrderStatus({
       orderId: order.id,
       status: nextStatus,
       staffAttribution: 'Chef Expédition'
-    });
+    }));
   };
 
   const handleCompleteOrder = (order: Order) => {
-    storage.updateOrderStatus({
+    run(storage.updateOrderStatus({
       orderId: order.id,
       status: 'completed',
       staffAttribution: 'Caisse Service'
-    });
+    }));
   };
 
   const handleConfirmReject = () => {
     if (!rejectingOrder) return;
-    storage.updateOrderStatus({
+    run(storage.updateOrderStatus({
       orderId: rejectingOrder.id,
       status: 'rejected',
       staffAttribution: 'Manager Salle',
       rejectionReason
-    });
+    }));
     setRejectingOrder(null);
   };
 
   const handleConfirmRefund = () => {
     if (!refundingOrder) return;
-    storage.updatePaymentStatus({
+    run(storage.updatePaymentStatus({
       orderId: refundingOrder.id,
       paymentStatus: 'refunded',
       staffAttribution: 'Manager Caisse',
       refundReason
-    });
+    }));
     setRefundingOrder(null);
   };
 
   const handleMarkPaid = (order: Order) => {
-    storage.updatePaymentStatus({
+    run(storage.updatePaymentStatus({
       orderId: order.id,
       paymentStatus: 'paid',
       staffAttribution: 'Caisse'
-    });
+    }));
   };
 
   // Filtered orders list
@@ -186,7 +192,7 @@ export const StaffDashboard: React.FC<Props> = ({ restaurant, onSwitchToCustomer
 
   return (
     <div className="min-h-screen bg-[#0d070a] text-neutral-100 flex flex-col font-sans">
-      {/* Top Operational Bar */}
+      {canManage && <div className="p-3 flex items-center justify-between bg-neutral-900 text-sm"><span>Prise de commandes : {restaurant.isOpen ? 'ouverte' : 'fermée'}</span><button className="text-amber-300 underline" onClick={() => run(storage.setService(restaurant.id, !restaurant.isOpen))}>{restaurant.isOpen ? 'Fermer les commandes' : 'Ouvrir les commandes'}</button></div>}{/* Top Operational Bar */}
       <header className="bg-[#140a0f] border-b border-amber-950/60 px-4 sm:px-6 py-3 flex items-center justify-between sticky top-0 z-40">
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-amber-600 to-amber-500 flex items-center justify-center text-black font-extrabold shadow-md">
@@ -199,7 +205,7 @@ export const StaffDashboard: React.FC<Props> = ({ restaurant, onSwitchToCustomer
               </h1>
               <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-semibold flex items-center gap-1">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                Service Ouvert · Meknès
+                {restaurant.isOpen ? 'Service ouvert' : 'Service fermé'} · {restaurant.city}
               </span>
             </div>
             <p className="text-[11px] text-neutral-400">Poste Caisse & Écran Cuisine</p>
@@ -251,7 +257,7 @@ export const StaffDashboard: React.FC<Props> = ({ restaurant, onSwitchToCustomer
             </span>
           </div>
           <button
-            onClick={() => storage.resolveStaffCall(staffCalls[0].id)}
+            hidden={!canPay} onClick={() => run(storage.resolveStaffCall(staffCalls[0].id))}
             className="bg-black text-amber-300 px-3 py-1 rounded-lg text-xs font-bold hover:bg-neutral-900 whitespace-nowrap"
           >
             Marquer pris en charge ✓
@@ -280,7 +286,7 @@ export const StaffDashboard: React.FC<Props> = ({ restaurant, onSwitchToCustomer
           </button>
 
           <button
-            onClick={() => setActiveTab('menu')}
+            hidden={!canEditMenu} onClick={() => setActiveTab('menu')}
             className={`py-2 px-3.5 rounded-xl flex items-center gap-2 transition-all ${
               activeTab === 'menu'
                 ? 'bg-amber-600 text-black font-bold shadow-md'
@@ -292,7 +298,7 @@ export const StaffDashboard: React.FC<Props> = ({ restaurant, onSwitchToCustomer
           </button>
 
           <button
-            onClick={() => setActiveTab('tables')}
+            hidden={!canPay} onClick={() => setActiveTab('tables')}
             className={`py-2 px-3.5 rounded-xl flex items-center gap-2 transition-all ${
               activeTab === 'tables'
                 ? 'bg-amber-600 text-black font-bold shadow-md'
@@ -304,7 +310,7 @@ export const StaffDashboard: React.FC<Props> = ({ restaurant, onSwitchToCustomer
           </button>
 
           <button
-            onClick={() => setActiveTab('campaigns')}
+            hidden disabled title="Campagnes non activées" onClick={() => setActiveTab('campaigns')}
             className={`py-2 px-3.5 rounded-xl flex items-center gap-2 transition-all ${
               activeTab === 'campaigns'
                 ? 'bg-amber-600 text-black font-bold shadow-md'
@@ -316,7 +322,7 @@ export const StaffDashboard: React.FC<Props> = ({ restaurant, onSwitchToCustomer
           </button>
 
           <button
-            onClick={() => setActiveTab('analytics')}
+            hidden={!canManage} onClick={() => setActiveTab('analytics')}
             className={`py-2 px-3.5 rounded-xl flex items-center gap-2 transition-all ${
               activeTab === 'analytics'
                 ? 'bg-amber-600 text-black font-bold shadow-md'
@@ -478,7 +484,7 @@ export const StaffDashboard: React.FC<Props> = ({ restaurant, onSwitchToCustomer
 
                             {ord.paymentStatus !== 'paid' && ord.paymentStatus !== 'refunded' && (
                               <button
-                                onClick={() => handleMarkPaid(ord)}
+                                hidden={!canPay} onClick={() => handleMarkPaid(ord)}
                                 title="Encaisser"
                                 className="text-[10px] px-1.5 py-0.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 rounded"
                               >
@@ -500,7 +506,7 @@ export const StaffDashboard: React.FC<Props> = ({ restaurant, onSwitchToCustomer
                               Accepter (+20 min)
                             </button>
                             <button
-                              onClick={() => setRejectingOrder(ord)}
+                              hidden={role === 'kitchen'} onClick={() => setRejectingOrder(ord)}
                               className="py-2 px-3 rounded-xl bg-red-950/80 hover:bg-red-900 text-red-200 border border-red-800 text-xs font-semibold"
                             >
                               Refuser
@@ -528,7 +534,7 @@ export const StaffDashboard: React.FC<Props> = ({ restaurant, onSwitchToCustomer
 
                         {isReady && (
                           <button
-                            onClick={() => handleCompleteOrder(ord)}
+                            hidden={!canPay} onClick={() => handleCompleteOrder(ord)}
                             className="w-full py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-black font-extrabold text-xs uppercase"
                           >
                             Marquer comme terminée ✓
@@ -547,10 +553,10 @@ export const StaffDashboard: React.FC<Props> = ({ restaurant, onSwitchToCustomer
 
                           {!isCancelled && (
                             <button
-                              onClick={() => setRefundingOrder(ord)}
+                              hidden={!canManage || ord.paymentStatus !== 'paid'} onClick={() => setRefundingOrder(ord)}
                               className="text-neutral-500 hover:text-red-400 text-[11px]"
                             >
-                              Rembourser / Annuler
+                              Enregistrer un remboursement
                             </button>
                           )}
                         </div>
@@ -614,7 +620,7 @@ export const StaffDashboard: React.FC<Props> = ({ restaurant, onSwitchToCustomer
                     </span>
                     <button
                       onClick={() => {
-                        storage.toggleDishAvailability(dish.id);
+                        run(storage.toggleDishAvailability(dish.id));
                         setDishes(storage.getDishes(restaurant.id));
                       }}
                       className={`w-12 h-6 rounded-full transition-colors relative p-0.5 ${
@@ -642,10 +648,7 @@ export const StaffDashboard: React.FC<Props> = ({ restaurant, onSwitchToCustomer
               <h3 className="text-base font-bold text-white font-sans">
                 Chevalets de table & QR Codes sécurisés
               </h3>
-              <p className="text-xs text-neutral-400">
-                Chaque table physique dispose d'un jeton de session cryptographique afin
-                d'empêcher les abus à distance.
-              </p>
+              <p className="text-xs text-neutral-400">Imprimez le lien de chaque table en QR. Ce lien est une clé d’accès : partagez-le uniquement avec les clients à cette table.</p>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -904,7 +907,7 @@ export const StaffDashboard: React.FC<Props> = ({ restaurant, onSwitchToCustomer
               Rembourser la commande #{refundingOrder.orderNumber} ({refundingOrder.totalMAD} MAD)
             </h3>
             <p className="text-xs text-neutral-400">
-              Cette action annulera la commande et déduira les points de fidélité associés.
+              Effectuez d’abord le remboursement au client. Cette action enregistre le remboursement, annule la commande et retire les points associés.
             </p>
             <input
               type="text"
@@ -923,7 +926,7 @@ export const StaffDashboard: React.FC<Props> = ({ restaurant, onSwitchToCustomer
                 onClick={handleConfirmRefund}
                 className="flex-1 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs"
               >
-                Valider remboursement
+                Confirmer le remboursement effectué
               </button>
             </div>
           </div>

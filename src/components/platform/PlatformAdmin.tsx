@@ -29,16 +29,6 @@ export const PlatformAdmin: React.FC<Props> = ({
   onNavigateToCustomer,
   onNavigateToStaff
 }) => {
-  const [resetDone, setResetDone] = useState(false);
-
-  const handleResetData = () => {
-    if (window.confirm('Voulez-vous réinitialiser toutes les données de démonstration Mida aux valeurs initiales ?')) {
-      storage.initializeIfEmpty(true);
-      setResetDone(true);
-      setTimeout(() => setResetDone(false), 3000);
-    }
-  };
-
   return (
     <div className="min-h-screen bg-[#090507] text-neutral-100 p-4 sm:p-8 font-sans">
       <div className="max-w-5xl mx-auto space-y-8">
@@ -57,23 +47,10 @@ export const PlatformAdmin: React.FC<Props> = ({
             </p>
           </div>
 
-          <div className="flex items-center gap-2">
-            <button
-              onClick={handleResetData}
-              className="py-2 px-3.5 rounded-xl bg-red-950/80 hover:bg-red-900 border border-red-800 text-red-200 text-xs font-bold flex items-center gap-2 transition-colors"
-            >
-              <RotateCcw size={14} />
-              <span>Réinitialiser Démo</span>
-            </button>
-          </div>
+
         </div>
 
-        {resetDone && (
-          <div className="p-3.5 rounded-2xl bg-emerald-950/70 border border-emerald-800 text-emerald-300 text-xs flex items-center gap-2">
-            <CheckCircle2 size={16} />
-            <span>Données réinitialisées avec succès aux valeurs de démonstration officielles.</span>
-          </div>
-        )}
+
 
         {/* Multi-Tenants list */}
         <div className="space-y-4">
@@ -169,10 +146,10 @@ export const PlatformAdmin: React.FC<Props> = ({
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-bold uppercase tracking-wider text-neutral-300 flex items-center gap-2">
               <DollarSign size={16} className="text-amber-400" />
-              <span>Abonnements SaaS Plateforme Mida (B2B)</span>
+              <span>Formules envisagées · facturation non activée</span>
             </h2>
             <span className="text-[11px] text-neutral-500">
-              Facturation logicielle distincte des encaissements repas
+              Aucun abonnement ou paiement automatique n’est connecté.
             </span>
           </div>
 
@@ -191,7 +168,7 @@ export const PlatformAdmin: React.FC<Props> = ({
 
             <div className="p-5 rounded-3xl bg-[#1d0c14] border border-amber-600/60 space-y-3 relative overflow-hidden">
               <div className="absolute top-2 right-2 text-[10px] bg-amber-500 text-black px-2 py-0.5 rounded-full font-bold">
-                Actif (Braise Burger)
+                Exemple de formule
               </div>
               <span className="text-xs font-bold text-amber-400 uppercase">Formule Pro</span>
               <p className="text-2xl font-black text-white tabular-nums">
@@ -230,8 +207,8 @@ export const PlatformAdmin: React.FC<Props> = ({
             <code className="text-amber-300 bg-neutral-900 px-1 py-0.5 rounded font-mono">
               restaurantId
             </code>
-            . Les commandes, paniers, règles de fidélité et consentements de Sarah Mansouri chez
-            Braise Burger sont totalement inaccessibles pour les autres établissements.
+            . Les comptes du personnel ne peuvent consulter que les commandes de leur établissement.
+            L’administrateur de la plateforme dispose d’un accès distinct de supervision.
           </p>
         </div>
       </div>

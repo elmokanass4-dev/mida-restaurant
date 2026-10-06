@@ -41,7 +41,7 @@ export const CustomerAccount: React.FC<Props> = ({
   const pastOrders = storage.getOrders(restaurant.id);
   const favoriteDishes = dishes.filter((d) => customer.favoriteDishIds.includes(d.id));
 
-  const handleToggleConsent = () => {
+  const handleToggleConsent = async () => {
     const updatedState = !marketingOptIn;
     setMarketingOptIn(updatedState);
     const updatedCust: CustomerProfile = {
@@ -49,7 +49,7 @@ export const CustomerAccount: React.FC<Props> = ({
       marketingConsent: updatedState,
       marketingConsentTimestamp: new Date().toISOString()
     };
-    storage.updateCustomer(updatedCust);
+    try { await storage.updateCustomer(updatedCust); } catch (e) { setMarketingOptIn(customer.marketingConsent); storage.report(e); return; }
     setSaveSuccess(true);
     setTimeout(() => setSaveSuccess(false), 2000);
   };

@@ -24,40 +24,12 @@ export const CartDrawer: React.FC<Props> = ({
   onRemoveItem,
   onProceedToCheckout
 }) => {
-  if (!isOpen) return null;
   const t = getTranslation(language);
-
-  const [promoCode, setPromoCode] = useState('RETOUR15');
-  const [appliedCode, setAppliedCode] = useState<string | null>(null);
-  const [promoError, setPromoError] = useState<string | null>(null);
-
   const subtotalMAD = items.reduce((sum, item) => sum + item.lineTotalMAD, 0);
-
-  // Calculate discount if promo applied
-  let discountMAD = 0;
-  if (appliedCode === 'RETOUR15') {
-    if (subtotalMAD >= 100) {
-      discountMAD = Math.min(Math.round(subtotalMAD * 0.15), 30);
-    }
-  }
-
-  const handleApplyPromo = () => {
-    setPromoError(null);
-    if (!promoCode.trim()) return;
-
-    if (promoCode.trim().toUpperCase() === 'RETOUR15') {
-      if (subtotalMAD < 100) {
-        setPromoError('Le code RETOUR15 requiert un minimum de 100 MAD de commande.');
-        return;
-      }
-      setAppliedCode('RETOUR15');
-    } else {
-      setPromoError('Code promotionnel non valide ou expiré.');
-    }
-  };
-
-  const finalTotalMAD = Math.max(0, subtotalMAD - discountMAD);
-
+  const discountMAD = 0;
+  const appliedCode = undefined;
+  const finalTotalMAD = subtotalMAD;
+  if (!isOpen) return null;
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
       <div
@@ -171,43 +143,6 @@ export const CartDrawer: React.FC<Props> = ({
               </div>
             ))}
 
-            {/* Promo Code input */}
-            <div className="p-3.5 rounded-2xl bg-[#1a0c13] border border-amber-950/60 mt-4">
-              <div className="flex items-center gap-1.5 mb-2 text-xs font-semibold text-amber-300">
-                <Tag size={13} />
-                <span>Code promo & Offre Fidélité</span>
-              </div>
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  placeholder="Ex: RETOUR15"
-                  value={promoCode}
-                  onChange={(e) => setPromoCode(e.target.value.toUpperCase())}
-                  className="flex-1 bg-neutral-900 border border-neutral-800 rounded-xl px-3 py-2 text-xs text-white uppercase placeholder:text-neutral-500 focus:outline-none focus:border-amber-500"
-                />
-                <button
-                  type="button"
-                  onClick={handleApplyPromo}
-                  className="px-3.5 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-black font-bold text-xs uppercase tracking-wide transition-all"
-                >
-                  Appliquer
-                </button>
-              </div>
-
-              {appliedCode && (
-                <div className="mt-2 text-[11px] text-emerald-400 flex items-center gap-1.5 font-medium">
-                  <Check size={13} />
-                  <span>Code {appliedCode} activé : -{discountMAD} MAD appliqués !</span>
-                </div>
-              )}
-
-              {promoError && (
-                <div className="mt-2 text-[11px] text-red-400 flex items-center gap-1.5">
-                  <AlertCircle size={13} />
-                  <span>{promoError}</span>
-                </div>
-              )}
-            </div>
           </div>
         )}
 
@@ -221,7 +156,7 @@ export const CartDrawer: React.FC<Props> = ({
 
             {discountMAD > 0 && (
               <div className="flex justify-between text-xs text-emerald-400">
-                <span>{t.discount} (RETOUR15)</span>
+                <span>{t.discount} </span>
                 <span className="font-bold tabular-nums">-{discountMAD} MAD</span>
               </div>
             )}
