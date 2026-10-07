@@ -9,8 +9,14 @@ const emptyCustomer=(restaurantId:string):CustomerProfile=>({id:'guest',restaura
 class StorageAdapter {
   private snapshot:Snapshot={user:null,restaurants:SEED_RESTAURANTS.map(r=>({...r,tables:[],returnCampaigns:[]})),dishes:SEED_DISHES,categories:SEED_CATEGORIES,orders:[],customers:[],ledger:[],calls:[]};
   private generation=0;
+  private refreshSequence=0;
   private demo=demoEnabled?new DemoPersistence():undefined;
   public user:StaffUser|null=null;
+  public member:{id:string;email:string;name:string}|null=null;
+  public async memberAuth(mode:'login'|'register',data:{email:string;password:string;name?:string}){this.generation++;await api(`/member/${mode}`,'POST',data);this.generation++;await this.refresh();}
+  public async memberPassword(currentPassword:string,newPassword:string){await api('/member/password','POST',{currentPassword,newPassword});await this.refresh();}
+  public async issueReceipt(orderId:string){if(this.demo)return {token:this.demo.issueReceipt(orderId),points:0,expiresAt:''};return api<{token:string;points:number;expiresAt:string}>(`/orders/${encodeURIComponent(orderId)}/receipt`,'POST',{});}
+  public async claimReceipt(restaurantId:string,input:string){let token=input.trim();if(/^https?:/i.test(token)){const url=new URL(token);token=url.searchParams.get('receipt')||new URLSearchParams(url.hash.slice(1)).get('receipt')||'';}if(this.demo)return this.claimDemoReceipt(restaurantId,token);const result=await this.mutate<{points:number;balance:number}>('/loyalty/claim','POST',{restaurantId,token});return result.points;}
   public connected=false;
   public issueDemoReceipt(orderId:string){if(!this.demo)throw new Error('Fonction disponible uniquement en démonstration.');return this.demo.issueReceipt(orderId);}
   public async claimDemoReceipt(restaurantId:string,code:string){if(!this.demo)throw new Error('Fonction disponible uniquement en démonstration.');const points=this.demo.claimReceipt(restaurantId,code);await this.refresh();return points;}
@@ -28,16 +34,19 @@ class StorageAdapter {
     }
     if(!backendEnabled) return;
     const generation=this.generation;
+    const sequence=++this.refreshSequence;
     const next=await api<Snapshot>('/snapshot');
-    if(generation!==this.generation) return;
+    if(generation!==this.generation||sequence!==this.refreshSequence) return;
     const newOrders=next.orders.some(o=>!this.snapshot.orders.some(old=>old.id===o.id));
     this.snapshot=next; this.user=next.user; this.connected=true;
+    this.member=(next as Snapshot&{member?:{id:string;email:string;name:string}|null}).member??null;
     window.dispatchEvent(new CustomEvent(SYNC_EVENT_NAME,{detail:{type:newOrders?'ORDER_SUBMITTED':'SYNC'}}));
   }
   public async login(email:string,password:string) {this.generation++; await api('/login','POST',{email,password}); this.generation++; await this.refresh();}
   public async logout() {
     this.generation++;
     await api('/logout','POST');
+    this.member=null;
     this.generation++;
     this.snapshot={...this.snapshot,user:null,orders:[],customers:[],calls:[],ledger:[],restaurants:this.snapshot.restaurants.map(r=>({...r,tables:[],returnCampaigns:[]}))}; this.user=null;
     window.dispatchEvent(new CustomEvent(SYNC_EVENT_NAME)); await this.refresh();
@@ -68,7 +77,7 @@ class StorageAdapter {
   public getOrders(id:string){return this.snapshot.orders.filter(o=>o.restaurantId===id).sort((a,b)=>b.createdAt.localeCompare(a.createdAt));}
   public getOrderByRef(ref:string){return this.snapshot.orders.find(o=>o.secureRef===ref);}
   public getCustomer(id:string){return this.snapshot.customers.find(c=>c.restaurantId===id)??emptyCustomer(id);}
-  public getLoyaltyLedger(id:string){return this.snapshot.ledger.filter(l=>l.restaurantId===id);}
+  public getLoyaltyLedger(id:string){return this.snapshot.ledger.filter(l=>l.restaurantId===id).sort((a,b)=>b.timestamp.localeCompare(a.timestamp));}
   public getStaffCalls(id:string){return this.snapshot.calls.filter(c=>c.restaurantId===id&&!c.resolved);}
   public updateCustomer(customer:CustomerProfile){return this.mutate(`/profile/${encodeURIComponent(customer.restaurantId)}`,'PATCH',{marketingConsent:customer.marketingConsent});}
   public async submitOrder(data:Omit<Order,'id'|'orderNumber'|'secureRef'|'createdAt'|'status'>,requestKey:string) {
@@ -84,7 +93,7 @@ class StorageAdapter {
   public resolveStaffCall(id:string){return this.mutate(`/calls/${encodeURIComponent(id)}`,'PATCH');}
   public setService(id:string,isOpen:boolean){return this.mutate(`/restaurants/${encodeURIComponent(id)}/service`,'PATCH',{isOpen});}
   // Estimate only. The server independently validates every submitted order.
-  public verifyAndCalculateOrder(params:{restaurantId:string;mode:'table'|'pickup'|'delivery';items:OrderItem[];deliveryZoneId?:string;offerCode?:string}) {
+  public verifyAndCalculateOrder(params:{restaurantId:string;mode:'table'|'pickup'|'delivery';items:OrderItem[];deliveryZoneId?:string;offerCode?:string;redeemPoints?:boolean}) {
     const restaurant=this.getRestaurants().find(r=>r.id===params.restaurantId);
     if(!restaurant) throw new Error('Restaurant introuvable.');
     const subtotalMAD=params.items.reduce((sum,item)=>{
@@ -95,8 +104,12 @@ class StorageAdapter {
     },0);
     const zone=restaurant.deliverySettings.zones.find(z=>z.id===params.deliveryZoneId);
     const deliveryFeeMAD=params.mode==='delivery'?(zone?.feeMAD??restaurant.deliverySettings.deliveryFeeMAD):0;
-    const totalMAD=subtotalMAD+deliveryFeeMAD, taxRatePercent=restaurant.taxRatePercent??0;
-    return {subtotalMAD,discountMAD:0,deliveryFeeMAD,totalMAD,taxRatePercent,taxAmountMAD:Math.round((totalMAD-totalMAD/(1+taxRatePercent/100))*100)/100,appliedOfferId:undefined};
+    let discountMAD=0;
+    if(params.redeemPoints){const rules=restaurant.loyaltyConfig;if(!this.member||rules.enabled===false||this.getCustomer(restaurant.id).loyaltyPoints<rules.pointsToRedeem)throw new Error('Points insuffisants ou fidélité indisponible.');if(subtotalMAD<(rules.minRewardSpendMAD??50)||subtotalMAD<rules.rewardValueMAD)throw new Error(`Minimum fidélité : ${rules.minRewardSpendMAD??50} MAD.`);if(params.offerCode)throw new Error('Les remises ne sont pas cumulables.');discountMAD=rules.rewardValueMAD;}
+    else if(params.offerCode){const promo=restaurant.promotion;if(!promo?.enabled||promo.code!==params.offerCode.trim().toUpperCase()||Date.parse(promo.expiresAt)<=Date.now())throw new Error('Promotion inconnue ou expirée.');if(subtotalMAD<promo.minSpendMAD)throw new Error(`Minimum promotion : ${promo.minSpendMAD} MAD.`);discountMAD=Math.min(subtotalMAD*promo.percent/100,promo.maxDiscountMAD,subtotalMAD);}
+    discountMAD=Math.round(discountMAD*100)/100;
+    const totalMAD=Math.round((subtotalMAD-discountMAD+deliveryFeeMAD)*100)/100, taxRatePercent=restaurant.taxRatePercent??0;
+    return {subtotalMAD,discountMAD,deliveryFeeMAD,totalMAD,taxRatePercent,taxAmountMAD:Math.round((totalMAD-totalMAD/(1+taxRatePercent/100))*100)/100,appliedOfferId:undefined};
   }
 }
 export const storage=new StorageAdapter();

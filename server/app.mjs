@@ -2,6 +2,7 @@ import express from 'express';
 import { randomUUID } from 'node:crypto';
 import { openDatabase, token, digest, passwordMatches, passwordHash, createUser } from './database.mjs';
 import { ApiError, fail, text, priceOrder } from './pricing.mjs';
+import {mountMembership,mountLoyalty,loyaltyRules} from './loyalty.mjs';
 
 const staffRoles = ['owner','manager','kitchen','cashier','waiter','platform_admin'];
 const managers = ['owner','manager','platform_admin'];
@@ -18,7 +19,7 @@ export function createApp({databasePath, catalog, origin, production = false}) {
   const allowedOrigin = new URL(origin).origin;
   if (production && !origin.startsWith('https://')) throw new Error('Production APP_ORIGIN must use HTTPS.');
   app.use((_req,res,next) => {
-    res.set({'X-Content-Type-Options':'nosniff','Referrer-Policy':'same-origin','X-Frame-Options':'DENY','Permissions-Policy':'camera=(), microphone=(), geolocation=()'});
+    res.set({'X-Content-Type-Options':'nosniff','Referrer-Policy':'same-origin','X-Frame-Options':'DENY','Permissions-Policy':'camera=(self), microphone=(), geolocation=()'});
     if (production) res.set('Strict-Transport-Security','max-age=31536000');
     next();
   });
@@ -65,6 +66,15 @@ export function createApp({databasePath, catalog, origin, production = false}) {
   const saveOrder = (req,row,action) => {store.put('order',row.data,row.restaurant_id,row.owner_id); store.audit(req.user.id,action,row.id);};
   const restaurant = id => store.read('restaurant',id)?.data ?? fail(404,'Restaurant introuvable.');
   const profile = (customerId,restaurantId) => store.read('profile',`${customerId}:${restaurantId}`)?.data ?? blankCustomer(`${customerId}:${restaurantId}`,restaurantId);
+  mountMembership({app,store,wrap,limit,newSession});
+  mountLoyalty({app,store,wrap,limit,authorize,restaurant,profile});
+  const priceFor=(req,data)=>priceOrder(restaurant(data.restaurantId),store.list('dish').map(r=>r.data),data,{member:!!req.member,points:profile(req.session.customer_id,data.restaurantId).loyaltyPoints});
+  const restoreReward=row=>{
+    const order=row.data;if(!order.redeemedPoints||order.redemptionRestored)return;
+    const p=profile(row.owner_id,row.restaurant_id);p.loyaltyPoints+=order.redeemedPoints;order.redemptionRestored=true;
+    store.put('profile',p,row.restaurant_id,row.owner_id);
+    store.put('ledger',{id:randomUUID(),restaurantId:row.restaurant_id,customerId:p.id,timestamp:new Date().toISOString(),pointsDelta:order.redeemedPoints,type:'refund_reversal',orderId:order.id,description:`Restitution récompense ${order.orderNumber}`},row.restaurant_id,row.owner_id);
+  };
 
   app.post('/api/login',wrap(async(req,res)=>{
     const email = text(req.body.email,254,true).toLowerCase();
@@ -87,6 +97,7 @@ export function createApp({databasePath, catalog, origin, production = false}) {
   app.get('/api/snapshot',wrap((req,res)=>{
     const restaurants = store.list('restaurant').map(row=>{
       const r = structuredClone(row.data);
+      r.loyaltyConfig=loyaltyRules(r);
       const member = req.user && (req.user.role==='platform_admin' || req.user.restaurant_id===r.id);
       if (!member) {r.tables=[]; r.returnCampaigns=[];}
       else if (!managers.includes(req.user.role)) {r.returnCampaigns=[]; if(req.user.role==='kitchen')r.tables=[];}
@@ -95,17 +106,18 @@ export function createApp({databasePath, catalog, origin, production = false}) {
     const accessible = row => req.user ? (req.user.role==='platform_admin' || row.restaurant_id===req.user.restaurant_id) : row.owner_id===req.session.customer_id;
     const orders = store.list('order').filter(accessible).map(row=>{
       const order = structuredClone(row.data);
+      delete order.loyaltyCustomerId;delete order.redemptionRestored;
       if (!req.user) {delete order.staffAttribution; delete order.tableSessionToken;}
       if (req.user?.role==='kitchen') {delete order.customerPhone; delete order.deliveryAddress;}
       return order;
     });
-    res.json({user:req.user ? {id:req.user.id,email:req.user.email,role:req.user.role,restaurantId:req.user.restaurant_id} : null,
+    res.json({member:req.member||null,user:req.user ? {id:req.user.id,email:req.user.email,role:req.user.role,restaurantId:req.user.restaurant_id} : null,
       restaurants,categories:store.list('category').map(r=>r.data),dishes:store.list('dish').map(r=>r.data),orders,
       customers:restaurants.map(r=>profile(req.session.customer_id,r.id)),
       ledger:store.list('ledger').filter(r=>r.owner_id===req.session.customer_id).map(r=>r.data),
       calls:req.user ? store.list('call').filter(accessible).map(r=>r.data) : []});
   }));
-  app.post('/api/quote',wrap((req,res)=>res.json(priceOrder(restaurant(req.body.restaurantId),store.list('dish').map(r=>r.data),req.body))));
+  app.post('/api/quote',wrap((req,res)=>res.json(priceFor(req,req.body))));
   app.post('/api/orders',wrap((req,res)=>{
     const data = req.body;
     const key = text(req.get('idempotency-key'),100,true);
@@ -117,12 +129,13 @@ export function createApp({databasePath, catalog, origin, production = false}) {
       if (prior) {if(prior.fingerprint!==fingerprint) fail(409,'Cette clé correspond à un autre panier.'); return store.read('order',prior.order_id).data;}
       limit(`orders:${req.session.customer_id}`,10,600000); limit(`orders-ip:${req.ip}`,100,600000);
       const r = restaurant(data.restaurantId);
-      const verified = priceOrder(r,store.list('dish').map(r=>r.data),data);
+      const verified = priceFor(req,data);
       if(!Number.isFinite(data.expectedTotalMAD)||Math.abs(data.expectedTotalMAD-verified.totalMAD)>0.005)fail(409,'Le prix a changé. Actualisez le panier avant de confirmer.');
       const customerName = text(data.customerName,100,true), customerPhone = text(data.customerPhone,30,true);
       if (!/^[+\d\s()-]{7,30}$/.test(customerPhone)) fail(400,'Téléphone invalide.');
       const paymentMethod = data.paymentMethod;
       if (!['cash','counter','card_terminal'].includes(paymentMethod)) fail(400,'Paiement en ligne non disponible.');
+      if(data.mode==='delivery'&&paymentMethod==='card_terminal')fail(400,'La livraison se paie au livreur en espèces.');
       let table;
       if(data.mode==='table') {
         table=r.tables.find(t=>t.tableNumber===data.tableNumber && t.sessionToken===data.tableSessionToken);
@@ -138,6 +151,7 @@ export function createApp({databasePath, catalog, origin, production = false}) {
       store.db.prepare('INSERT INTO idempotency VALUES(?,?,?,?)').run(req.session.customer_id,key,fingerprint,id);
       const p=profile(req.session.customer_id,r.id); p.name=customerName; p.phone=customerPhone;
       store.put('profile',p,r.id,req.session.customer_id);
+      if(verified.redeemedPoints){p.loyaltyPoints-=verified.redeemedPoints;store.put('profile',p,r.id,req.session.customer_id);store.put('ledger',{id:randomUUID(),restaurantId:r.id,customerId:p.id,timestamp:order.createdAt,pointsDelta:-verified.redeemedPoints,type:'redeemed',orderId:id,description:`Récompense ${order.orderNumber}`},r.id,req.session.customer_id);}
       store.audit(req.session.customer_id,'order_created',id);
       return order;
     });
@@ -162,12 +176,11 @@ export function createApp({databasePath, catalog, origin, production = false}) {
       if(status==='rejected') order.rejectionReason=text(req.body.rejectionReason,300,true);
       if(status==='completed') {
         order.completedAt=new Date().toISOString();
-        const r=restaurant(row.restaurant_id), p=profile(row.owner_id,row.restaurant_id);
-        const points=Math.floor(order.totalMAD*r.loyaltyConfig.pointsPerMAD);
-        order.loyaltyPointsEarned=points; p.loyaltyPoints+=points; p.totalSpentMAD+=order.totalMAD; p.totalOrdersCount++; p.lastPurchaseDate=order.completedAt;
+        const p=profile(row.owner_id,row.restaurant_id);
+        p.totalSpentMAD+=order.totalMAD; p.totalOrdersCount++; p.lastPurchaseDate=order.completedAt;
         store.put('profile',p,row.restaurant_id,row.owner_id);
-        store.put('ledger',{id:randomUUID(),restaurantId:row.restaurant_id,customerId:p.id,timestamp:order.completedAt,pointsDelta:points,type:'earned',orderId:order.id,description:`Commande ${order.orderNumber}`},row.restaurant_id,row.owner_id);
       }
+      if(['cancelled','rejected'].includes(status))restoreReward(row);
       saveOrder(req,row,`order_${status}`); return order;
     }); res.json(result);
   }));
@@ -181,11 +194,13 @@ export function createApp({databasePath, catalog, origin, production = false}) {
       else if(status==='refunded' && order.paymentStatus==='paid') {
         order.refundReason=text(req.body.refundReason,300,true); order.paymentStatus='refunded'; order.status='cancelled';
         if(order.loyaltyPointsEarned) {
-          const p=profile(row.owner_id,row.restaurant_id); p.loyaltyPoints=Math.max(0,p.loyaltyPoints-order.loyaltyPointsEarned); p.totalSpentMAD=Math.max(0,p.totalSpentMAD-order.totalMAD); p.totalOrdersCount=Math.max(0,p.totalOrdersCount-1);
-          store.put('profile',p,row.restaurant_id,row.owner_id);
-          store.put('ledger',{id:randomUUID(),restaurantId:row.restaurant_id,customerId:p.id,timestamp:new Date().toISOString(),pointsDelta:-order.loyaltyPointsEarned,type:'refund_reversal',orderId:order.id,description:`Remboursement ${order.orderNumber}`},row.restaurant_id,row.owner_id);
+          const customerId=order.loyaltyCustomerId||row.owner_id,p=profile(customerId,row.restaurant_id); p.loyaltyPoints-=order.loyaltyPointsEarned;
+          store.put('profile',p,row.restaurant_id,customerId);
+          store.put('ledger',{id:randomUUID(),restaurantId:row.restaurant_id,customerId:p.id,timestamp:new Date().toISOString(),pointsDelta:-order.loyaltyPointsEarned,type:'refund_reversal',orderId:order.id,description:`Remboursement ${order.orderNumber}`},row.restaurant_id,customerId);
           order.loyaltyPointsEarned=0;
         }
+        if(order.completedAt){const p=profile(row.owner_id,row.restaurant_id);p.totalSpentMAD=Math.max(0,p.totalSpentMAD-order.totalMAD);p.totalOrdersCount=Math.max(0,p.totalOrdersCount-1);store.put('profile',p,row.restaurant_id,row.owner_id);}
+        restoreReward(row);
       } else fail(409,'Transition de paiement invalide.');
       order.staffAttribution=req.user.email; saveOrder(req,row,`payment_${status}`); return order;
     }); res.json(result);
@@ -195,6 +210,22 @@ export function createApp({databasePath, catalog, origin, production = false}) {
     authorize(req,row.restaurant_id,['owner','manager','kitchen','platform_admin']);
     if(typeof req.body.isAvailable!=='boolean') fail(400,'Disponibilité invalide.');
     row.data.isAvailable=req.body.isAvailable; store.put('dish',row.data); store.audit(req.user.id,'dish_availability',row.id); res.json(row.data);
+  }));
+  app.patch('/api/dishes/:id/details',wrap((req,res)=>{
+    const row=store.read('dish',req.params.id)??fail(404,'Plat introuvable.');authorize(req,row.restaurant_id,managers);
+    const b=req.body;
+    if(!Number.isFinite(b.priceMAD)||b.priceMAD<0||b.priceMAD>10000)fail(400,'Prix invalide.');
+    const name={},description={};for(const lang of ['fr','ar','en']){name[lang]=text(b.name?.[lang],150,true);description[lang]=text(b.description?.[lang],1000);}
+    row.data.priceMAD=Math.round(b.priceMAD*100)/100;row.data.name=name;row.data.description=description;
+    store.put('dish',row.data);store.audit(req.user.id,'dish_details',row.id);res.json(row.data);
+  }));
+  app.patch('/api/restaurants/:id/details',wrap((req,res)=>{
+    const r=restaurant(req.params.id);authorize(req,r.id,managers);const b=req.body;
+    if(!Number.isInteger(b.tableCount)||b.tableCount<1||b.tableCount>100)fail(400,'Nombre de tables invalide.');
+    if(store.list('order').some(row=>row.restaurant_id===r.id&&row.data.tableNumber>b.tableCount&&!['completed','cancelled','rejected'].includes(row.data.status)))fail(409,'Une table supprimée a encore une commande active.');
+    r.name=text(b.name,100,true);r.address=text(b.address,300,true);r.phone=text(b.phone,30,true);r.openingHours=text(b.openingHours,300,true);
+    r.tableCount=b.tableCount;r.tables=Array.from({length:b.tableCount},(_,i)=>r.tables.find(t=>t.tableNumber===i+1)||{tableNumber:i+1,label:`Table ${i+1}`,sessionToken:token(),capacity:4});
+    store.put('restaurant',r);store.audit(req.user.id,'restaurant_details',r.id);res.json(r);
   }));
   app.patch('/api/restaurants/:id/service',wrap((req,res)=>{
     authorize(req,req.params.id,managers);

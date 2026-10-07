@@ -61,7 +61,7 @@ test('tenant isolation and role enforcement survive crafted requests',async t=>{
   assert.equal((await owner.request(`/orders/${placed.body.id}/status`,'PATCH',{status:'completed'})).status,409);
   assert.equal((await cashier.request(`/orders/${placed.body.id}/payment`,'PATCH',{paymentStatus:'paid'})).status,200);
   assert.equal((await owner.request(`/orders/${placed.body.id}/status`,'PATCH',{status:'completed'})).status,200);
-  const profile=(await customer.request('/snapshot')).body.customers.find(c=>c.restaurantId===restaurantId);assert.ok(profile.loyaltyPoints>0);
+  const profile=(await customer.request('/snapshot')).body.customers.find(c=>c.restaurantId===restaurantId);assert.equal(profile.loyaltyPoints,0,'Receipt claims replace automatic awards');
   assert.equal((await owner.request(`/orders/${placed.body.id}/status`,'PATCH',{status:'completed'})).status,409);
   assert.equal((await cashier.request(`/orders/${placed.body.id}/payment`,'PATCH',{paymentStatus:'refunded',refundReason:'test'})).status,403);
   assert.equal((await owner.request(`/orders/${placed.body.id}/payment`,'PATCH',{paymentStatus:'refunded',refundReason:'test'})).status,200);

@@ -12,6 +12,7 @@
     "lint": "tsc --noEmit",
     "start": "node server/index.mjs",
     "dev:api": "node server/index.mjs",
+    "start:local": "node server/local.mjs",
     "catalog": "node server/catalog-build.mjs",
     "test": "node --test server/*.test.mjs",
     "provision-user": "node server/provision-user.mjs",

@@ -15,7 +15,7 @@ This presentation uses fictitious restaurant data stored in the current browser.
 
 The source includes a persistent ordering backend, server-calculated prices, private customer order access, password-based staff accounts, restaurant access separation, and owner/manager/kitchen/cashier/waiter permissions. Owner account management is implemented in the connected version. Hosting and first-owner account provisioning are still required before live use.
 
-Payments are manually recorded cash/terminal payments. This is not an online card processor. Automated marketing, promotion redemption and subscription billing are not active. Menu, prices, hours and operations must be reviewed with the restaurant before a pilot.
+Payments are manually recorded cash/terminal payments. The connected local version includes member login, receipt claims, loyalty redemption and a manual promotion code. Automated marketing and subscription billing are not active. Menu, prices, hours and operations must be reviewed with the restaurant before a pilot.
 
 ## Suggested pitch
 
@@ -30,4 +30,4 @@ Ask the owner to approve a pilot scope, confirm their menu and prices, and nomin
 3. Confirm Ajouter mes points. A ticket can be claimed once; repeat attempts are rejected. Refunding the purchase removes its earned points and blocks further claims. Completing an order does not automatically award points.
 4. Sample rules only: one point per whole MAD paid, excluding delivery fees; 100 points show a potential 15 MAD future discount. Discount redemption is not implemented. Ask the owner to approve earning, reward, expiry and refund rules.
 
-The demo uses a fictitious member and browser-local storage. It does not authenticate a real customer, prevent browser-storage tampering or share receipt claims between devices. The connected version still uses its prior automatic award policy; server-issued receipts, authenticated customer membership, atomic claims and actual till receipt integration must be implemented before replacing it. Do not use these demo receipts for real rewards. Reset clears example tickets and points only in the demo.
+The public demo uses a fictitious member and browser-local storage. It does not authenticate a real customer, prevent browser-storage tampering or share receipt claims between devices. The connected local version now has server-issued receipts, authenticated membership, atomic claims and discount redemption; see LOCAL_TESTING.md. Direct integration with the restaurant's existing till remains pending. Do not use public demo receipts for real rewards. Reset clears example tickets and points only in the demo.

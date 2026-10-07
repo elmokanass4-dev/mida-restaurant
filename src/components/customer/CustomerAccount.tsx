@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { CustomerProfile, Language, Restaurant, Dish, Order } from '../../types';
 import { getTranslation } from '../../i18n/translations';
 import { storage } from '../../services/storageAdapter';
+import {MemberAccount} from './MemberAccount';
 import {
   Heart,
   Download,
@@ -60,11 +61,12 @@ export const CustomerAccount: React.FC<Props> = ({
 
   return (
     <div className="p-4 sm:p-5 max-w-lg mx-auto space-y-5 pb-24 text-neutral-100">
+      <MemberAccount/>
       {/* Account Profile Card */}
       <div className="rounded-3xl bg-[#190c13] border border-amber-950/60 p-5 space-y-4">
         <div className="flex items-center gap-3.5">
           <div className="w-14 h-14 rounded-2xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-300 font-bold text-xl font-sans">
-            SM
+            {customer.name.slice(0,2).toUpperCase()}
           </div>
           <div>
             <h2 className="text-lg font-bold text-white font-sans">{customer.name}</h2>

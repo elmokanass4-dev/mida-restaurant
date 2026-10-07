@@ -1,7 +1,8 @@
 import React from 'react';
 import { Order, Restaurant } from '../../types';
 import { Printer, X } from 'lucide-react';
-import {demoEnabled} from '../../services/api';
+import {backendEnabled} from '../../services/api';
+import {storage} from '../../services/storageAdapter';
 import {ReceiptLoyaltyQR} from './ReceiptLoyaltyQR';
 
 interface Props {
@@ -113,7 +114,7 @@ export const KitchenTicketModal: React.FC<Props> = ({ order, restaurant, onClose
             </div>
 
             {/* Payment footer */}
-            {demoEnabled&&order.paymentStatus==='paid'&&!['cancelled','rejected'].includes(order.status)&&<ReceiptLoyaltyQR order={order}/>}
+            {backendEnabled&&storage.user?.role!=='kitchen'&&order.paymentStatus==='paid'&&!['cancelled','rejected'].includes(order.status)&&<ReceiptLoyaltyQR order={order}/>}
             <div className="text-center pt-2 border-t border-dashed border-black text-[10px]">
               <p>Paiement : {order.paymentMethod.toUpperCase()} ({order.paymentStatus})</p>
               <p className="mt-1">Merci de votre visite chez {restaurant.name} !</p>

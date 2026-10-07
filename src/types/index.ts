@@ -138,12 +138,16 @@ export interface Restaurant {
   prepTimeEstimateMinutes: number;
   taxRatePercent: number; // e.g. 10%
   loyaltyConfig: {
+    enabled?: boolean;
+    claimDays?: number;
+    minRewardSpendMAD?: number;
     pointsPerMAD: number;
     pointsToRedeem: number;
     rewardValueMAD: number;
     welcomePoints: number;
   };
   returnCampaigns: ReturnCampaignRule[];
+  promotion?: {enabled:boolean;code:string;percent:number;maxDiscountMAD:number;minSpendMAD:number;expiresAt:string};
 }
 
 export interface SelectedModifier {
@@ -207,6 +211,9 @@ export interface Order {
   rejectionReason?: string;
   refundReason?: string;
   loyaltyPointsEarned?: number;
+  redeemPoints?: boolean;
+  offerCode?: string;
+  redeemedPoints?: number;
 }
 
 export interface CustomerProfile {

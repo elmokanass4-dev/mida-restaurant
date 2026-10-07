@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { OrderItem, Language, Restaurant, OrderingMode, PaymentMethod, Order } from '../../types';
 import { getTranslation } from '../../i18n/translations';
-import { backendEnabled } from '../../services/api';
+import { backendEnabled,demoEnabled } from '../../services/api';
 import { storage } from '../../services/storageAdapter';
 import { X, Utensils, ShoppingBag, Bike, CreditCard, Banknote, Store, ShieldCheck, AlertCircle } from 'lucide-react';
 
@@ -39,6 +39,8 @@ export const CheckoutModal: React.FC<Props> = ({
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('counter');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [redeemPoints,setRedeemPoints]=useState(false);
+  const [promoDraft,setPromoDraft]=useState(''),[offerCode,setOfferCode]=useState(appliedPromoCode||'');
 
   const [requestKey] = useState(() => crypto.randomUUID());
   if (!isOpen) return null;
@@ -50,7 +52,7 @@ export const CheckoutModal: React.FC<Props> = ({
       mode,
       items,
       deliveryZoneId: mode === 'delivery' ? deliveryZoneId : undefined,
-      offerCode: appliedPromoCode
+      offerCode,redeemPoints
     });
   } catch (err: unknown) {
     const errorMsg = err instanceof Error ? err.message : 'Erreur lors du calcul de la commande';
@@ -98,6 +100,7 @@ export const CheckoutModal: React.FC<Props> = ({
         tableNumber: mode === 'table' ? activeTableNumber : undefined,
         tableSessionToken: mode === 'table' ? new URLSearchParams(window.location.search).get('token') || undefined : undefined,
         customerName: customerName.trim(),
+        redeemPoints,offerCode:offerCode||undefined,
         customerPhone: customerPhone.trim(),
         deliveryAddress: mode === 'delivery' ? deliveryAddress.trim() : undefined,
         deliveryZoneId: mode === 'delivery' ? deliveryZoneId : undefined,
@@ -111,7 +114,7 @@ export const CheckoutModal: React.FC<Props> = ({
         totalMAD: calcResult.totalMAD,
         appliedOfferId: calcResult.appliedOfferId,
         paymentStatus: 'unpaid',
-        paymentMethod
+        paymentMethod:mode==='delivery'?'cash':paymentMethod
       }, requestKey);
 
       onOrderSuccess(createdOrder);
@@ -289,6 +292,12 @@ export const CheckoutModal: React.FC<Props> = ({
             />
           </div>
 
+          {!demoEnabled&&backendEnabled&&<div className="space-y-3 p-3 rounded-xl border border-amber-900">
+            {storage.member&&<label className="flex items-center gap-2"><input type="checkbox" checked={redeemPoints} disabled={isSubmitting||!!offerCode||restaurant.loyaltyConfig.enabled===false||storage.getCustomer(restaurant.id).loyaltyPoints<restaurant.loyaltyConfig.pointsToRedeem||calcResult.subtotalMAD<Math.max(restaurant.loyaltyConfig.minRewardSpendMAD??50,restaurant.loyaltyConfig.rewardValueMAD)} onChange={e=>setRedeemPoints(e.target.checked)}/><span>Utiliser {restaurant.loyaltyConfig.pointsToRedeem} points pour {restaurant.loyaltyConfig.rewardValueMAD} MAD de réduction (minimum {restaurant.loyaltyConfig.minRewardSpendMAD??50} MAD)</span></label>}
+            <label htmlFor="checkout-promo">Code promotion</label><div className="flex gap-2"><input id="checkout-promo" value={promoDraft} maxLength={30} onChange={e=>setPromoDraft(e.target.value)} className="bg-black rounded p-2 min-w-0 flex-1"/><button type="button" disabled={isSubmitting||redeemPoints} onClick={()=>{try{storage.verifyAndCalculateOrder({restaurantId:restaurant.id,mode,items,deliveryZoneId:mode==='delivery'?deliveryZoneId:undefined,offerCode:promoDraft.trim()});setOfferCode(promoDraft.trim());setSubmitError(null);}catch(e){setSubmitError(e instanceof Error?e.message:'Promotion invalide.');}}} className="underline">Appliquer</button></div>
+            {offerCode&&<button type="button" onClick={()=>{setOfferCode('');setPromoDraft('');}} className="underline">Retirer la promotion {offerCode}</button>}
+            {!storage.member&&<p className="text-neutral-400">Connectez-vous dans Fidélité pour utiliser vos points.</p>}
+          </div>}
           {/* Payment Method */}
           <div>
             <label className="block font-semibold uppercase tracking-wider text-neutral-400 mb-2">
@@ -312,6 +321,7 @@ export const CheckoutModal: React.FC<Props> = ({
 
               <button
                 type="button"
+                disabled={mode==='delivery'}
                 onClick={() => setPaymentMethod('card_terminal')}
                 className={`p-3 rounded-2xl border flex items-center gap-2.5 transition-all text-left ${
                   paymentMethod === 'card_terminal'

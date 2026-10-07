@@ -8,7 +8,7 @@ export const text = (value, max = 200, required = false) => {
   if (result.length > max || (required && !result)) fail(400, 'Champ manquant ou trop long.');
   return result;
 };
-export function priceOrder(restaurant, dishes, input) {
+export function priceOrder(restaurant, dishes, input, membership={member:false,points:0}) {
   if (!restaurant.isOpen) fail(409, 'Restaurant fermé.');
   if (!['table', 'pickup', 'delivery'].includes(input.mode) || !restaurant.orderingModes[input.mode]) fail(400, 'Mode indisponible.');
   if (!Array.isArray(input.items) || !input.items.length || input.items.length > 40) fail(400, 'Panier invalide.');
@@ -44,8 +44,25 @@ export function priceOrder(restaurant, dishes, input) {
     if (subtotalMAD < Math.max(settings.minOrderMAD, zone.minSpendMAD)) fail(400, 'Minimum de livraison non atteint.');
     deliveryFeeMAD = zone.feeMAD;
   }
-  if (input.offerCode || input.appliedOfferId) fail(400, 'Les promotions ne sont pas encore activées.');
-  const totalMAD = Math.round((subtotalMAD + deliveryFeeMAD) * 100) / 100;
+  if(input.appliedOfferId)fail(400,'Utilisez un code promotion.');
+  if(input.redeemPoints!==undefined&&typeof input.redeemPoints!=='boolean')fail(400,'Choix de fidélité invalide.');
+  let discountMAD=0,redeemedPoints=0;
+  if(input.redeemPoints){
+    if(input.offerCode)fail(400,'Une remise fidélité ne peut pas être cumulée avec une promotion.');
+    if(!membership.member)fail(401,'Connexion membre requise pour utiliser les points.');
+    const rules={enabled:true,pointsToRedeem:100,rewardValueMAD:15,minRewardSpendMAD:50,...restaurant.loyaltyConfig};
+    if(!rules.enabled)fail(409,'Fidélité désactivée.');
+    if(membership.points<rules.pointsToRedeem)fail(409,'Solde de points insuffisant.');
+    if(subtotalMAD<rules.minRewardSpendMAD||subtotalMAD<rules.rewardValueMAD)fail(400,`Minimum fidélité : ${rules.minRewardSpendMAD} MAD.`);
+    discountMAD=rules.rewardValueMAD;redeemedPoints=rules.pointsToRedeem;
+  }else if(input.offerCode){
+    const code=text(input.offerCode,30,true).toUpperCase(),promo=restaurant.promotion;
+    if(!promo?.enabled||promo.code!==code||Date.parse(promo.expiresAt)<=Date.now())fail(400,'Promotion inconnue ou expirée.');
+    if(subtotalMAD<promo.minSpendMAD)fail(400,`Minimum promotion : ${promo.minSpendMAD} MAD.`);
+    discountMAD=Math.min(subtotalMAD*promo.percent/100,promo.maxDiscountMAD,subtotalMAD);
+  }
+  discountMAD=Math.round(discountMAD*100)/100;
+  const totalMAD = Math.round((subtotalMAD - discountMAD + deliveryFeeMAD) * 100) / 100;
   const taxRatePercent = restaurant.taxRatePercent ?? 0;
-  return {verifiedItems: items, subtotalMAD, discountMAD: 0, deliveryFeeMAD, taxRatePercent, taxAmountMAD: Math.round((totalMAD - totalMAD / (1 + taxRatePercent / 100)) * 100) / 100, totalMAD};
+  return {verifiedItems: items, subtotalMAD, discountMAD, redeemedPoints, deliveryFeeMAD, taxRatePercent, taxAmountMAD: Math.round((totalMAD - totalMAD / (1 + taxRatePercent / 100)) * 100) / 100, totalMAD};
 }

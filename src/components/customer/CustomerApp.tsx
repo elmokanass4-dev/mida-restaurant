@@ -48,8 +48,9 @@ export const CustomerApp: React.FC<Props> = ({
   const t = getTranslation(language);
 
   // Navigation State
-  const [activeTab, setActiveTab] = useState<'home' | 'menu' | 'orders' | 'rewards' | 'profile'>(new URLSearchParams(window.location.search).has('receipt')?'rewards':'home');
+  const [activeTab, setActiveTab] = useState<'home' | 'menu' | 'orders' | 'rewards' | 'profile'>(new URLSearchParams(window.location.search).has('receipt')||new URLSearchParams(window.location.hash.slice(1)).has('receipt')?'rewards':'home');
   const [deviceFrameMode, setDeviceFrameMode] = useState<boolean>(false);
+  useEffect(()=>{const openReceipt=()=>{if(new URLSearchParams(window.location.hash.slice(1)).has('receipt'))setActiveTab('rewards');};window.addEventListener('hashchange',openReceipt);return()=>window.removeEventListener('hashchange',openReceipt);},[]);
 
   // Cart & Order State
   const [cartItems, setCartItems] = useState<OrderItem[]>([]);

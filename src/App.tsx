@@ -8,7 +8,8 @@ import {PlatformAdmin} from './components/platform/PlatformAdmin';
 import {StaffLogin} from './components/StaffLogin';
 import {TeamManagement} from './components/TeamManagement';
 import {PasswordChange} from './components/PasswordChange';
-type Surface='customer'|'staff'|'platform'|'team';
+import {RestaurantSettings} from './components/RestaurantSettings';
+type Surface='customer'|'staff'|'platform'|'team'|'settings';
 const params=new URLSearchParams(window.location.search);
 export default function App(){
   const [surface,setSurface]=useState<Surface>(params.get('surface')==='platform'?'platform':params.get('surface')==='staff'?'staff':'customer');
@@ -26,15 +27,17 @@ export default function App(){
     return()=>{alive=false;clearInterval(timer);window.removeEventListener(SYNC_EVENT_NAME,sync);window.removeEventListener(ERROR_EVENT_NAME,showError);};
   },[]);
   useEffect(()=>{document.documentElement.dir=language==='ar'?'rtl':'ltr';document.documentElement.lang=language;},[language]);
+  useEffect(()=>{const url=new URL(window.location.href);if(surface==='customer')url.searchParams.delete('surface');else url.searchParams.set('surface',surface);window.history.replaceState(null,'',url);},[surface]);
   const user=storage.user;
   const restaurants=storage.getRestaurants();
   const selectable=user?.role==='platform_admin'?restaurants:restaurants.filter(r=>r.id===(user?.restaurantId||restaurantId));
   const restaurant=restaurants.find(r=>r.id===(user&&surface!=='customer'&&user.role!=='platform_admin'?user.restaurantId:restaurantId))||restaurants[0];
   const canManageTeam=user?.role==='owner'||user?.role==='platform_admin';
+  const canConfigure=['owner','manager','platform_admin'].includes(user?.role||'');
   const protectedSurface=surface!=='customer';
   if(!ready)return <div className="min-h-screen bg-[#080305] text-white p-8" role="status">Connexion au restaurant…</div>;
   if(protectedSurface&&!user)return <StaffLogin onSuccess={()=>{setRestaurantId(storage.user?.restaurantId||restaurantId);setSurface(storage.user?.role==='platform_admin'?'platform':'staff');}}/>;
-  const allowedSurface=surface==='platform'&&user?.role!=='platform_admin'||surface==='team'&&!canManageTeam?'staff':surface;
+  const allowedSurface=surface==='platform'&&user?.role!=='platform_admin'||surface==='team'&&!canManageTeam||surface==='settings'&&!canConfigure?'staff':surface;
   const table=Number(params.get('table'));
   const activeTable=Number.isInteger(table)&&table>0&&params.get('token')?table:undefined;
   return <div className="min-h-screen bg-[#080305] text-neutral-100 flex flex-col">
@@ -43,6 +46,7 @@ export default function App(){
       <button onClick={()=>setSurface('staff')} className="text-amber-300">Écran Staff / Cuisine</button>
       {user.role==='platform_admin'&&<button onClick={()=>setSurface('platform')} className="text-amber-300">Plateforme SaaS</button>}
       {canManageTeam&&<button onClick={()=>setSurface('team')} className="text-amber-300">Équipe</button>}
+      {canConfigure&&<button onClick={()=>setSurface('settings')} className="text-amber-300">Configuration</button>}
       {user.role==='platform_admin'&&<select aria-label="Restaurant" value={restaurant.id} onChange={e=>setRestaurantId(e.target.value)} className="bg-neutral-900 p-2 rounded">{selectable.map(r=><option key={r.id} value={r.id}>{r.name}</option>)}</select>}
       <span className="ml-auto text-neutral-400">{user.email} · {user.role}</span>
       <PasswordChange/>
@@ -53,6 +57,7 @@ export default function App(){
     {allowedSurface==='customer'&&<CustomerApp key={restaurant.id} restaurant={restaurant} language={language} onLanguageChange={setLanguage} activeTableNumber={activeTable}/>}
     {allowedSurface==='staff'&&user&&<StaffDashboard key={`${restaurant.id}:${user.role}`} restaurant={restaurant} onSwitchToCustomerView={()=>setSurface('customer')}/>}
     {allowedSurface==='team'&&canManageTeam&&<TeamManagement key={restaurant.id} restaurantId={restaurant.id}/>}
+    {allowedSurface==='settings'&&canConfigure&&<RestaurantSettings key={restaurant.id} restaurant={restaurant}/>}
     {allowedSurface==='platform'&&user?.role==='platform_admin'&&<PlatformAdmin restaurants={restaurants} currentRestaurantId={restaurant.id} onSelectRestaurant={setRestaurantId} onNavigateToCustomer={()=>setSurface('customer')} onNavigateToStaff={()=>setSurface('staff')}/>}
     {!user&&surface==='customer'&&<footer className="p-5 pb-24 text-center text-xs text-neutral-500"><a href={`${import.meta.env.BASE_URL}?surface=staff&restaurant=${encodeURIComponent(restaurant.id)}`}>Espace équipe</a></footer>}
   </div>;

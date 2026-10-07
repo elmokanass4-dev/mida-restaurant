@@ -26,6 +26,8 @@ export function openDatabase(filename, catalog) {
     CREATE TABLE IF NOT EXISTS idempotency (customer_id TEXT NOT NULL, request_key TEXT NOT NULL, fingerprint TEXT NOT NULL, order_id TEXT NOT NULL, PRIMARY KEY(customer_id,request_key));
     CREATE TABLE IF NOT EXISTS audit (id INTEGER PRIMARY KEY, at TEXT NOT NULL, actor TEXT NOT NULL, action TEXT NOT NULL, entity_id TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS rate_limits (key TEXT PRIMARY KEY, count INTEGER NOT NULL, resets INTEGER NOT NULL);
+    CREATE TABLE IF NOT EXISTS customers (id TEXT PRIMARY KEY, email TEXT UNIQUE NOT NULL, name TEXT NOT NULL, password_hash TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 1);
+    CREATE TABLE IF NOT EXISTS loyalty_receipts (order_id TEXT PRIMARY KEY, restaurant_id TEXT NOT NULL, token_hash TEXT UNIQUE NOT NULL, claim_token TEXT NOT NULL, points INTEGER NOT NULL, expires INTEGER NOT NULL, claimed_by TEXT, claimed_at TEXT);
     CREATE INDEX IF NOT EXISTS entity_scope ON entities(kind,restaurant_id,owner_id);`);
   const read = (kind, id) => {
     const row = db.prepare('SELECT * FROM entities WHERE kind=? AND id=?').get(kind,id);

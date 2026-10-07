@@ -11,6 +11,7 @@ import {
 } from '../../types';
 import { storage, SYNC_EVENT_NAME } from '../../services/storageAdapter';
 import { KitchenTicketModal } from './KitchenTicketModal';
+import {TableQRCode} from './TableQRCode';
 import {
   Bell,
   Volume2,
@@ -664,17 +665,7 @@ export const StaffDashboard: React.FC<Props> = ({ restaurant, onSwitchToCustomer
 
                   {/* Clean QR Graphic */}
                   <div className="p-3 rounded-2xl bg-white text-black shadow-md">
-                    <svg className="w-24 h-24" viewBox="0 0 100 100" fill="currentColor">
-                      <rect x="5" y="5" width="25" height="25" />
-                      <rect x="10" y="10" width="15" height="15" fill="white" />
-                      <rect x="13" y="13" width="9" height="9" />
-                      <rect x="70" y="5" width="25" height="25" />
-                      <rect x="75" y="10" width="15" height="15" fill="white" />
-                      <rect x="5" y="70" width="25" height="25" />
-                      <rect x="10" y="75" width="15" height="15" fill="white" />
-                      <rect x="40" y="40" width="20" height="20" />
-                      <rect x="70" y="70" width="10" height="10" />
-                    </svg>
+                    <TableQRCode restaurantId={restaurant.id} tableNumber={tbl.tableNumber} token={tbl.sessionToken}/>
                   </div>
 
                   <div>
