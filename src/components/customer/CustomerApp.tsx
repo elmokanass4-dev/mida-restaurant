@@ -210,17 +210,6 @@ export const CustomerApp: React.FC<Props> = ({
             : ''
         }`}
       >
-        {/* Mobile Status Bar Simulation (Matches reference picture 10:09 AM, Notch, 89% battery) */}
-        <div className="pt-2 px-6 pb-1 flex items-center justify-between text-xs text-white/90 select-none z-30">
-          <span className="font-semibold text-[13px] tracking-tight">10:09 AM</span>
-          {/* Dynamic Island / Notch */}
-          <div className="w-24 h-4 bg-black rounded-full mx-auto hidden sm:block border border-neutral-800" />
-          <div className="flex items-center gap-1.5 text-[11px] font-medium">
-            <span>5G</span>
-            <span className="font-bold">89%</span>
-          </div>
-        </div>
-
         {/* Top App Header (Matching Apex Kitchen / Braise Burger logo & Shopping Bag) */}
         <header className="px-5 py-3 flex items-center justify-between sticky top-0 z-20 bg-[#0d0609]/90 backdrop-blur-md border-b border-amber-950/40">
           <div className="flex items-center gap-2">
