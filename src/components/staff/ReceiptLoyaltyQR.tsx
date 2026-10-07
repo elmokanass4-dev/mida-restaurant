@@ -10,6 +10,7 @@ export function ReceiptLoyaltyQR({order}:{order:Order}){
     let alive=true;
     storage.issueReceipt(order.id).then(async receipt=>{
       const code=receipt.token,url=new URL(import.meta.env.BASE_URL,window.location.origin);
+      url.searchParams.set('restaurant',order.restaurantId);
       if(demoEnabled)url.searchParams.set('receipt',code);else url.hash=new URLSearchParams({receipt:code}).toString();
       const module=await import('qrcode');const image=await module.default.toDataURL(url.href,{width:256,margin:4,errorCorrectionLevel:'M'});
       if(alive)setTicket({code,url:url.href,image});

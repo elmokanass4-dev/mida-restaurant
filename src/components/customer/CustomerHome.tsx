@@ -56,6 +56,8 @@ export const CustomerHome: React.FC<Props> = ({
 
   return (
     <div className="space-y-6 pb-24">
+      {restaurant.coverImage&&<img src={restaurant.coverImage} alt={restaurant.name} className="w-full h-40 object-cover"/>}
+      {!dishes.length&&<p className="p-5 text-neutral-300" role="status">La carte est en cours de préparation.</p>}
       {/* Table session indicator if active */}
       {activeTableNumber && (
         <div className="mx-4 mt-2 p-2.5 px-4 rounded-2xl bg-amber-950/40 border border-amber-600/40 flex items-center justify-between text-xs text-amber-200">

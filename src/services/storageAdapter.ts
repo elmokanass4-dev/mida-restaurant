@@ -7,7 +7,7 @@ export const ERROR_EVENT_NAME='mida_service_error';
 interface Snapshot {user:StaffUser|null; restaurants:Restaurant[]; dishes:Dish[]; categories:Category[]; orders:Order[]; customers:CustomerProfile[]; ledger:LoyaltyLedgerEntry[]; calls:StaffCallRequest[]}
 const emptyCustomer=(restaurantId:string):CustomerProfile=>({id:'guest',restaurantId,name:'Client',phone:'',loyaltyPoints:0,favoriteDishIds:[],totalOrdersCount:0,totalSpentMAD:0,marketingConsent:false,availableOffers:[]});
 class StorageAdapter {
-  private snapshot:Snapshot={user:null,restaurants:SEED_RESTAURANTS.map(r=>({...r,tables:[],returnCampaigns:[]})),dishes:SEED_DISHES,categories:SEED_CATEGORIES,orders:[],customers:[],ledger:[],calls:[]};
+  private snapshot:Snapshot={user:null,restaurants:backendEnabled&&!demoEnabled?[]:SEED_RESTAURANTS.map(r=>({...r,tables:[],returnCampaigns:[]})),dishes:backendEnabled&&!demoEnabled?[]:SEED_DISHES,categories:backendEnabled&&!demoEnabled?[]:SEED_CATEGORIES,orders:[],customers:[],ledger:[],calls:[]};
   private generation=0;
   private refreshSequence=0;
   private demo=demoEnabled?new DemoPersistence():undefined;

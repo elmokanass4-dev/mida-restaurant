@@ -1,5 +1,11 @@
 @import "tailwindcss";
 
+/* Restaurant-scoped accent; low-opacity surfaces retain readable white text. */
+.restaurant-brand [class*="text-amber-"] { color: var(--restaurant-accent); }
+.restaurant-brand [class*="border-amber-"] { border-color: color-mix(in srgb, var(--restaurant-accent) 45%, transparent); }
+.restaurant-brand :is(button,a,span,div)[class~="bg-amber-400"],
+.restaurant-brand :is(button,a,span,div)[class~="bg-amber-500"] { background-color: var(--restaurant-accent); color: var(--restaurant-on-accent, #080305); }
+
 @layer base {
   :root {
     --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;

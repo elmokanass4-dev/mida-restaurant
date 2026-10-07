@@ -151,7 +151,7 @@ export const OrderTracking: React.FC<Props> = ({
           )}
           {order.mode === 'delivery' && (
             <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-2.5 py-0.5 rounded-full font-semibold">
-              Livraison Meknès
+              Livraison
             </span>
           )}
           <span className="text-neutral-500">·</span>
@@ -360,7 +360,7 @@ export const OrderTracking: React.FC<Props> = ({
         {/* Loyalty earned notice */}
         {order.loyaltyPointsEarned ? (
           <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs flex items-center justify-between">
-            <span>Points fidélité Braise Club gagnés :</span>
+            <span>Points fidélité gagnés :</span>
             <span className="font-bold tabular-nums">+{order.loyaltyPointsEarned} pts</span>
           </div>
         ) : null}

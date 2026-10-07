@@ -118,7 +118,7 @@ export const KitchenTicketModal: React.FC<Props> = ({ order, restaurant, onClose
             <div className="text-center pt-2 border-t border-dashed border-black text-[10px]">
               <p>Paiement : {order.paymentMethod.toUpperCase()} ({order.paymentStatus})</p>
               <p className="mt-1">Merci de votre visite chez {restaurant.name} !</p>
-              <p className="text-[9px] text-neutral-500">Logiciel Mida Food Operations</p>
+              <p className="text-[9px] text-neutral-500">{restaurant.name}</p>
             </div>
           </div>
         </div>

@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { openDatabase, token, digest, passwordMatches, passwordHash, createUser } from './database.mjs';
 import { ApiError, fail, text, priceOrder } from './pricing.mjs';
 import {mountMembership,mountLoyalty,loyaltyRules} from './loyalty.mjs';
+import {mountTenants} from './tenants.mjs';
 
 const staffRoles = ['owner','manager','kitchen','cashier','waiter','platform_admin'];
 const managers = ['owner','manager','platform_admin'];
@@ -66,8 +67,20 @@ export function createApp({databasePath, catalog, origin, production = false}) {
   const saveOrder = (req,row,action) => {store.put('order',row.data,row.restaurant_id,row.owner_id); store.audit(req.user.id,action,row.id);};
   const restaurant = id => store.read('restaurant',id)?.data ?? fail(404,'Restaurant introuvable.');
   const profile = (customerId,restaurantId) => store.read('profile',`${customerId}:${restaurantId}`)?.data ?? blankCustomer(`${customerId}:${restaurantId}`,restaurantId);
+  app.use('/api',(req,_res,next)=>{try{
+    if(req.path==='/logout')return next();
+    const requested=req.get('x-mida-restaurant');
+    if(requested){
+      const r=store.list('restaurant').find(row=>row.id===requested||row.data.slug===requested)?.data??fail(404,'Restaurant introuvable.');
+      if(req.user&&req.user.role!=='platform_admin'&&req.user.restaurant_id!==r.id)fail(403,'Ce compte appartient à un autre restaurant. Déconnectez-vous pour changer de restaurant.');
+      req.tenantId=r.id;
+      if(req.body?.restaurantId&&req.body.restaurantId!==r.id)fail(403,'Restaurant incompatible avec ce lien.');
+    }
+    next();
+  }catch(e){next(e);}});
   mountMembership({app,store,wrap,limit,newSession});
   mountLoyalty({app,store,wrap,limit,authorize,restaurant,profile});
+  mountTenants({app,store,wrap,authorize,restaurant});
   const priceFor=(req,data)=>priceOrder(restaurant(data.restaurantId),store.list('dish').map(r=>r.data),data,{member:!!req.member,points:profile(req.session.customer_id,data.restaurantId).loyaltyPoints});
   const restoreReward=row=>{
     const order=row.data;if(!order.redeemedPoints||order.redemptionRestored)return;
@@ -84,6 +97,7 @@ export function createApp({databasePath, catalog, origin, production = false}) {
     const user = store.db.prepare('SELECT * FROM users WHERE email=? AND active=1').get(email);
     const fallback = await passwordHash('timing-placeholder', 'mida-invalid-user');
     if (!await passwordMatches(password,user?.password_hash ?? fallback) || !user) fail(401,'Identifiants incorrects.');
+    if(req.tenantId&&user.role!=='platform_admin'&&user.restaurant_id!==req.tenantId)fail(403,'Ce compte appartient à un autre restaurant.');
     store.db.prepare('DELETE FROM sessions WHERE hash=?').run(req.session.hash);
     newSession(res,req.session.customer_id,user.id);
     store.audit(user.id,'login',user.id);
@@ -95,7 +109,8 @@ export function createApp({databasePath, catalog, origin, production = false}) {
     newSession(res,randomUUID()); res.json({ok:true});
   }));
   app.get('/api/snapshot',wrap((req,res)=>{
-    const restaurants = store.list('restaurant').map(row=>{
+    const scopedId=req.user?.role==='platform_admin'?null:(req.user?.restaurant_id||req.tenantId||catalog.restaurants[0].id);
+    const restaurants = store.list('restaurant').filter(row=>!scopedId||row.id===scopedId).map(row=>{
       const r = structuredClone(row.data);
       r.loyaltyConfig=loyaltyRules(r);
       const member = req.user && (req.user.role==='platform_admin' || req.user.restaurant_id===r.id);
@@ -103,7 +118,7 @@ export function createApp({databasePath, catalog, origin, production = false}) {
       else if (!managers.includes(req.user.role)) {r.returnCampaigns=[]; if(req.user.role==='kitchen')r.tables=[];}
       return r;
     });
-    const accessible = row => req.user ? (req.user.role==='platform_admin' || row.restaurant_id===req.user.restaurant_id) : row.owner_id===req.session.customer_id;
+    const accessible = row => (!scopedId||row.restaurant_id===scopedId)&&(req.user ? (req.user.role==='platform_admin' || row.restaurant_id===req.user.restaurant_id) : row.owner_id===req.session.customer_id);
     const orders = store.list('order').filter(accessible).map(row=>{
       const order = structuredClone(row.data);
       delete order.loyaltyCustomerId;delete order.redemptionRestored;
@@ -112,9 +127,9 @@ export function createApp({databasePath, catalog, origin, production = false}) {
       return order;
     });
     res.json({member:req.member||null,user:req.user ? {id:req.user.id,email:req.user.email,role:req.user.role,restaurantId:req.user.restaurant_id} : null,
-      restaurants,categories:store.list('category').map(r=>r.data),dishes:store.list('dish').map(r=>r.data),orders,
+      restaurants,categories:store.list('category').filter(r=>!scopedId||r.restaurant_id===scopedId).map(r=>r.data),dishes:store.list('dish').filter(r=>!scopedId||r.restaurant_id===scopedId).map(r=>r.data),orders,
       customers:restaurants.map(r=>profile(req.session.customer_id,r.id)),
-      ledger:store.list('ledger').filter(r=>r.owner_id===req.session.customer_id).map(r=>r.data),
+      ledger:store.list('ledger').filter(r=>r.owner_id===req.session.customer_id&&(!scopedId||r.restaurant_id===scopedId)).map(r=>r.data),
       calls:req.user ? store.list('call').filter(accessible).map(r=>r.data) : []});
   }));
   app.post('/api/quote',wrap((req,res)=>res.json(priceFor(req,req.body))));
@@ -143,7 +158,8 @@ export function createApp({databasePath, catalog, origin, production = false}) {
       }
       const deliveryAddress=text(data.deliveryAddress,400,data.mode==='delivery');
       const id=randomUUID();
-      const order={id,restaurantId:r.id,orderNumber:`M-${store.list('order').length+1}`,secureRef:token(),mode:data.mode,
+      const nextNumber=store.list('order').filter(row=>row.restaurant_id===r.id).reduce((highest,row)=>Math.max(highest,Number(/^M-(\d+)$/.exec(row.data.orderNumber)?.[1]||0)),0)+1;
+      const order={id,restaurantId:r.id,orderNumber:`M-${nextNumber}`,secureRef:token(),mode:data.mode,
         customerName,customerPhone,customerNotes:text(data.customerNotes,500),deliveryAddress,deliveryZoneId:data.mode==='delivery'?data.deliveryZoneId:undefined,
         tableNumber:table?.tableNumber,items:verified.verifiedItems,...verified,status:'submitted',paymentStatus:'unpaid',paymentMethod,createdAt:new Date().toISOString()};
       delete order.verifiedItems;
@@ -215,7 +231,7 @@ export function createApp({databasePath, catalog, origin, production = false}) {
     const row=store.read('dish',req.params.id)??fail(404,'Plat introuvable.');authorize(req,row.restaurant_id,managers);
     const b=req.body;
     if(!Number.isFinite(b.priceMAD)||b.priceMAD<0||b.priceMAD>10000)fail(400,'Prix invalide.');
-    const name={},description={};for(const lang of ['fr','ar','en']){name[lang]=text(b.name?.[lang],150,true);description[lang]=text(b.description?.[lang],1000);}
+    const name={},description={};for(const lang of ['fr','ar','en']){name[lang]=text(b.name?.[lang],150,lang==='fr');description[lang]=text(b.description?.[lang],1000);}
     row.data.priceMAD=Math.round(b.priceMAD*100)/100;row.data.name=name;row.data.description=description;
     store.put('dish',row.data);store.audit(req.user.id,'dish_details',row.id);res.json(row.data);
   }));

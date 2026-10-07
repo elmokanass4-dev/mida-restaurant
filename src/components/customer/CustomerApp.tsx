@@ -225,14 +225,14 @@ export const CustomerApp: React.FC<Props> = ({
         <header className="px-5 py-3 flex items-center justify-between sticky top-0 z-20 bg-[#0d0609]/90 backdrop-blur-md border-b border-amber-950/40">
           <div className="flex items-center gap-2">
             <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-amber-600 to-amber-500 flex items-center justify-center text-black font-extrabold shadow-sm">
-              <Flame size={16} />
+              {restaurant.logoImage?<img src={restaurant.logoImage} alt={`Logo ${restaurant.name}`} className="w-7 h-7 object-contain rounded-lg"/>:<span aria-hidden="true">{restaurant.name.slice(0,1)}</span>}
             </div>
             <div className="flex flex-col">
               <span className="text-xs font-black uppercase tracking-widest text-amber-400 font-sans leading-none">
                 {restaurant.name}
               </span>
               <span className="text-[9px] uppercase tracking-wider text-neutral-400 leading-none mt-0.5">
-                Meknès Gourmet
+                {restaurant.tagline[language]||restaurant.tagline.fr||restaurant.city}
               </span>
             </div>
           </div>

@@ -118,6 +118,7 @@ export interface Restaurant {
   currency: 'MAD';
   timezone: 'Africa/Casablanca';
   accentColor: string;
+  logoImage?: string;
   coverImage: string;
   openingHours: string;
   isOpen: boolean;

@@ -135,7 +135,7 @@ export const CheckoutModal: React.FC<Props> = ({
         <div className="p-4 px-6 border-b border-neutral-800/80 flex items-center justify-between bg-[#190c13]">
           <div>
             <h3 className="font-bold text-base text-white font-sans">{t.checkout}</h3>
-            <span className="text-xs text-amber-300/80 font-medium">{restaurant.name} · Meknès</span>
+            <span className="text-xs text-amber-300/80 font-medium">{restaurant.name} · {restaurant.city}</span>
           </div>
           <button
             onClick={onClose}
@@ -216,7 +216,7 @@ export const CheckoutModal: React.FC<Props> = ({
                 <Store size={16} className="text-amber-400" />
                 <span>Adresse de retrait :</span>
               </div>
-              <span className="font-semibold text-white">Hamria, Meknès (~20 min)</span>
+              <span className="font-semibold text-white">{restaurant.address} (~{restaurant.prepTimeEstimateMinutes} min)</span>
             </div>
           )}
 
@@ -224,7 +224,7 @@ export const CheckoutModal: React.FC<Props> = ({
             <div className="space-y-3 p-3.5 rounded-2xl bg-neutral-900/70 border border-neutral-800">
               <div>
                 <label className="block text-neutral-300 font-medium mb-1">
-                  Zone de livraison à Meknès
+                  Zone de livraison · {restaurant.city}
                 </label>
                 <select
                   value={deliveryZoneId}

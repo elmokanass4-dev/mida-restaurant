@@ -5,7 +5,7 @@ export async function prepareLocalAccounts(store,restaurantId,url){
   if(process.env.NODE_ENV==='production')throw new Error('Local fixtures cannot run in production.');
   await fs.mkdir('data',{recursive:true});
   let credentials;try{credentials=JSON.parse(await fs.readFile('data/local-access.json','utf8'));}catch{credentials={accounts:[]};}
-  for(const role of ['owner','manager','kitchen','cashier','waiter']){
+  for(const role of ['owner','manager','kitchen','cashier','waiter','platform_admin']){
     const email=`${role}@local.mida.test`;
     if(!store.db.prepare('SELECT id FROM users WHERE email=?').get(email)){const password=token();await createUser(store,{email,password,role,restaurantId});credentials.accounts.push({role,email,password});}
   }
