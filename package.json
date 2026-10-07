@@ -15,6 +15,7 @@
     "start:local": "node server/local.mjs",
     "catalog": "node server/catalog-build.mjs",
     "test": "node --test server/*.test.mjs",
+    "test:load": "node server/load-test.mjs",
     "provision-user": "node server/provision-user.mjs",
     "build:server": "node server/catalog-build.mjs && vite build --mode server"
   },

@@ -30,6 +30,8 @@ Sample loyalty rules: 1 point per whole MAD paid for food, 100 points redeem a 1
 
 Automated API tests cover pricing, role/tenant access, orders, payment/refund rules, repeated submissions, membership, concurrent receipt claims/redemptions, privacy, promotions, configuration and SQLite restart persistence. TypeScript and production builds are also checked.
 
+A separate 30-customer plus two-staff local load test passed with 618 requests and zero unexpected failures. See LOAD_TEST_RESULTS.md for measurements, repeat instructions and limitations.
+
 The actual browser flow created M-1 for 110 DH, recorded its offline payment, completed it, generated its QR receipt and claimed 110 points as a member. M-2 then spent 100 points: 66 DH food minus 15 DH reward = 51 DH payable. The saved wallet retained 10 points. No browser console errors were observed during that flow. These are test orders, not real sales.
 
 For a presentation, use separate browser profiles for staff and customers. Log in with the local owner account through Espace équipe; use the customer account from Compte/Fidélité. Test data survives server restarts.
