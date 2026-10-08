@@ -64,6 +64,5 @@ export default function App(){
     {allowedSurface==='team'&&canManageTeam&&<TeamManagement key={restaurant.id} restaurantId={restaurant.id}/>}
     {allowedSurface==='settings'&&canConfigure&&<RestaurantSettings key={restaurant.id} restaurant={restaurant}/>}
     {allowedSurface==='platform'&&user?.role==='platform_admin'&&<PlatformAdmin restaurants={restaurants} currentRestaurantId={restaurant.id} onSelectRestaurant={setRestaurantId} onNavigateToCustomer={()=>setSurface('customer')} onNavigateToStaff={()=>setSurface('staff')}/>}
-    {!user&&surface==='customer'&&<footer className="p-5 pb-24 text-center text-xs text-neutral-500"><a href={`${import.meta.env.BASE_URL}?surface=staff&restaurant=${encodeURIComponent(restaurant.id)}`}>Espace équipe</a></footer>}
   </div>;
 }
