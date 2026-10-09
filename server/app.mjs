@@ -4,14 +4,17 @@ import { openDatabase, token, digest, passwordMatches, passwordHash, createUser 
 import { ApiError, fail, text, priceOrder } from './pricing.mjs';
 import {mountMembership,mountLoyalty,loyaltyRules} from './loyalty.mjs';
 import {mountTenants} from './tenants.mjs';
+import {createPos} from './pos.mjs';
 
 const staffRoles = ['owner','manager','kitchen','cashier','waiter','platform_admin'];
 const managers = ['owner','manager','platform_admin'];
 const cashiers = ['owner','manager','cashier','waiter','platform_admin'];
 const transitions = {submitted:['accepted','rejected','cancelled'],accepted:['preparing','cancelled'],preparing:['ready','out_for_delivery','cancelled'],ready:['completed','cancelled'],out_for_delivery:['completed','cancelled'],completed:[],rejected:[],cancelled:[]};
 const blankCustomer = (id, restaurantId) => ({id,restaurantId,name:'Client',phone:'',loyaltyPoints:0,favoriteDishIds:[],totalOrdersCount:0,totalSpentMAD:0,marketingConsent:false,availableOffers:[]});
-export function createApp({databasePath, catalog, origin, production = false}) {
+export function createApp({databasePath, catalog, origin, production = false, posOptions = {}}) {
   const store = openDatabase(databasePath,catalog);
+  let pos;
+  try { pos=createPos(store,{...posOptions,production}); } catch(error) { store.db.close(); throw error; }
   const app = express();
   app.disable('x-powered-by');
   const proxyHops=Number(process.env.TRUST_PROXY_HOPS || 0);
@@ -64,7 +67,7 @@ export function createApp({databasePath, catalog, origin, production = false}) {
     if (!req.user) fail(401,'Connexion du personnel requise.');
     if (!roles.includes(req.user.role) || (req.user.role !== 'platform_admin' && req.user.restaurant_id !== restaurantId)) fail(403,'Accès refusé.');
   };
-  const saveOrder = (req,row,action) => {store.put('order',row.data,row.restaurant_id,row.owner_id); store.audit(req.user.id,action,row.id);};
+  const saveOrder = (req,row,action) => {store.put('order',row.data,row.restaurant_id,row.owner_id); pos.orderChanged(row.data); store.audit(req.user.id,action,row.id);};
   const restaurant = id => store.read('restaurant',id)?.data ?? fail(404,'Restaurant introuvable.');
   const profile = (customerId,restaurantId) => store.read('profile',`${customerId}:${restaurantId}`)?.data ?? blankCustomer(`${customerId}:${restaurantId}`,restaurantId);
   app.use('/api',(req,_res,next)=>{try{
@@ -164,6 +167,7 @@ export function createApp({databasePath, catalog, origin, production = false}) {
         tableNumber:table?.tableNumber,items:verified.verifiedItems,...verified,status:'submitted',paymentStatus:'unpaid',paymentMethod,createdAt:new Date().toISOString()};
       delete order.verifiedItems;
       store.put('order',order,r.id,req.session.customer_id);
+      pos.enqueue(order);
       store.db.prepare('INSERT INTO idempotency VALUES(?,?,?,?)').run(req.session.customer_id,key,fingerprint,id);
       const p=profile(req.session.customer_id,r.id); p.name=customerName; p.phone=customerPhone;
       store.put('profile',p,r.id,req.session.customer_id);
@@ -301,6 +305,17 @@ export function createApp({databasePath, catalog, origin, production = false}) {
     store.db.prepare('UPDATE users SET active=? WHERE id=?').run(req.body.active?1:0,user.id);
     store.db.prepare('DELETE FROM sessions WHERE user_id=?').run(user.id); store.audit(req.user.id,'staff_access_changed',user.id); res.json({ok:true});
   }));
+  // Staff-only operational reporting. No payloads or POS control on the customer snapshot.
+  app.get('/api/restaurants/:id/pos/orders',wrap((req,res)=>{
+    authorize(req,req.params.id,['owner','manager','cashier','waiter','platform_admin']);
+    restaurant(req.params.id);
+    res.json({mode:pos.mode,orders:pos.list(req.params.id)});
+  }));
+  app.post('/api/orders/:id/pos/retry',wrap((req,res)=>{
+    const row=store.read('order',req.params.id)??fail(404,'Commande introuvable.');
+    authorize(req,row.restaurant_id,managers);
+    pos.retry(row.id);store.audit(req.user.id,'pos_retry_requested',row.id);res.json({ok:true});
+  }));
   app.use('/api',(req,res)=>res.status(404).json({error:'Action non disponible.'}));
   app.use((error,req,res,next)=>{
     if(res.headersSent) return next(error);
@@ -308,5 +323,5 @@ export function createApp({databasePath, catalog, origin, production = false}) {
     if(status===500) console.error('API failure',error.message);
     res.status(status).json({error:status===500?'Erreur du serveur. Réessayez.':error.message});
   });
-  return {app,store};
+  return {app,store,pos};
 }
