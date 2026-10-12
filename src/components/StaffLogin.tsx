@@ -1,16 +1,20 @@
 import React, {useState} from 'react';
 import {storage} from '../services/storageAdapter';
-import {backendEnabled} from '../services/api';
+import {api,backendEnabled} from '../services/api';
 export function StaffLogin({onSuccess,restaurantName='MIDA',restaurantId}:{onSuccess:()=>void;restaurantName?:string;restaurantId?:string}) {
   const [email,setEmail]=useState(''),[password,setPassword]=useState(''),[error,setError]=useState(''),[busy,setBusy]=useState(false);
+  const [reset,setReset]=useState(false),[code,setCode]=useState(''),[message,setMessage]=useState('');
   async function submit(e:React.FormEvent){e.preventDefault(); if(busy)return; setBusy(true); setError(''); try{await storage.login(email,password); setPassword(''); onSuccess();}catch(err){setError(err instanceof Error?err.message:'Connexion impossible.');}finally{setBusy(false);}}
-  return <main className="min-h-screen bg-[#080305] text-white grid place-items-center p-6"><form onSubmit={submit} className="w-full max-w-sm bg-[#190c13] rounded-3xl border border-amber-950 p-7 space-y-5">
-    <h1 className="text-2xl font-bold">{restaurantName} · Espace équipe</h1><p className="text-sm text-neutral-400">Connexion réservée au personnel autorisé.</p>
+  async function resetPassword(e:React.FormEvent){e.preventDefault();if(busy)return;setBusy(true);setError('');try{await api('/password/reset','POST',{token:code,newPassword:password});setPassword('');setCode('');setReset(false);setMessage('Mot de passe modifié. Toutes les anciennes sessions sont révoquées. Connectez-vous.');}catch(err){setError(err instanceof Error?err.message:'Réinitialisation non confirmée.');}finally{setBusy(false);}}
+  return <main className="mida-register register-lock"><form onSubmit={reset?resetPassword:submit} className="register-panel">
+    <h1 className="text-2xl font-bold">{restaurantName} · Espace équipe</h1><p className="text-sm text-slate-600">Connexion réservée au personnel autorisé.</p>
     {!backendEnabled&&<p role="status" className="text-amber-300 text-sm">Le service sécurisé n’est pas encore hébergé. Aucun accès staff public n’est disponible.</p>}
-    <label className="block text-sm">Email<input required type="email" autoComplete="username" value={email} onChange={e=>setEmail(e.target.value)} className="block w-full mt-2 bg-neutral-900 rounded-xl p-3 border border-neutral-700"/></label>
-    <label className="block text-sm">Mot de passe<input required type="password" autoComplete="current-password" value={password} onChange={e=>setPassword(e.target.value)} className="block w-full mt-2 bg-neutral-900 rounded-xl p-3 border border-neutral-700"/></label>
-    {error&&<p role="alert" className="text-red-300 text-sm">{error}</p>}
-    <button disabled={busy||!backendEnabled} className="w-full p-3 rounded-xl bg-amber-500 text-black font-bold disabled:opacity-40">{busy?'Connexion…':'Se connecter'}</button>
-    <a className="block text-center text-sm text-neutral-400 underline" href={`${import.meta.env.BASE_URL}${restaurantId?`?restaurant=${encodeURIComponent(restaurantId)}`:''}`}>Retour au menu client</a>
+    {reset?<><p>Demandez un code temporaire au responsable du serveur après vérification de votre identité. Aucun email automatique n’est envoyé.</p><label>Code à usage unique<input required value={code} onChange={e=>setCode(e.target.value)} autoComplete="off"/></label></>:<label>Email<input required type="email" autoComplete="username" value={email} onChange={e=>setEmail(e.target.value)}/></label>}
+    <label>{reset?'Nouveau mot de passe (12 caractères minimum)':'Mot de passe'}<input required minLength={reset?12:undefined} type="password" autoComplete={reset?'new-password':'current-password'} value={password} onChange={e=>setPassword(e.target.value)}/></label>
+    {error&&<p role="alert" className="register-error">{error}</p>}
+    {message&&<p role="status">{message}</p>}
+    <button disabled={busy||!backendEnabled} className="register-primary">{busy?'Veuillez patienter…':reset?'Réinitialiser mon mot de passe':'Se connecter'}</button>
+    <button type="button" onClick={()=>{setReset(!reset);setPassword('');setError('');}}>{reset?'Retour à la connexion':'Mot de passe oublié'}</button>
+    <a className="block text-center text-sm text-slate-600 underline" href={`${import.meta.env.BASE_URL}${restaurantId?`?restaurant=${encodeURIComponent(restaurantId)}`:''}`}>Retour au menu client</a>
   </form></main>;
 }

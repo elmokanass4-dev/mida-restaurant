@@ -5,10 +5,12 @@ import { ApiError, fail, text, priceOrder } from './pricing.mjs';
 import {mountMembership,mountLoyalty,loyaltyRules} from './loyalty.mjs';
 import {mountTenants} from './tenants.mjs';
 import {createPos} from './pos.mjs';
+import {mountRegister} from './register.mjs';
+import {mountAuthRecovery} from './auth-recovery.mjs';
 
 const staffRoles = ['owner','manager','kitchen','cashier','waiter','platform_admin'];
 const managers = ['owner','manager','platform_admin'];
-const cashiers = ['owner','manager','cashier','waiter','platform_admin'];
+const cashiers = ['owner','manager','cashier'];
 const transitions = {submitted:['accepted','rejected','cancelled'],accepted:['preparing','cancelled'],preparing:['ready','out_for_delivery','cancelled'],ready:['completed','cancelled'],out_for_delivery:['completed','cancelled'],completed:[],rejected:[],cancelled:[]};
 const blankCustomer = (id, restaurantId) => ({id,restaurantId,name:'Client',phone:'',loyaltyPoints:0,favoriteDishIds:[],totalOrdersCount:0,totalSpentMAD:0,marketingConsent:false,availableOffers:[]});
 export function createApp({databasePath, catalog, origin, production = false, posOptions = {}}) {
@@ -67,7 +69,24 @@ export function createApp({databasePath, catalog, origin, production = false, po
     if (!req.user) fail(401,'Connexion du personnel requise.');
     if (!roles.includes(req.user.role) || (req.user.role !== 'platform_admin' && req.user.restaurant_id !== restaurantId)) fail(403,'Accès refusé.');
   };
-  const saveOrder = (req,row,action) => {store.put('order',row.data,row.restaurant_id,row.owner_id); pos.orderChanged(row.data); store.audit(req.user.id,action,row.id);};
+  const saveOrder = (req,row,action) => {store.put('order',row.data,row.restaurant_id,row.owner_id); pos.orderChanged(row.data); register.orderChanged(row.data); register.refreshCustomerTotals(row); store.audit(req.user.id,action,row.id);};
+  app.use('/api',(req,_res,next)=>{try{
+    if(req.user&&req.user.restaurant_id&&!['/login','/logout','/password/reset'].includes(req.path)&&store.db.prepare('SELECT restaurant_id FROM register_config WHERE restaurant_id=?').get(req.user.restaurant_id)){
+      const last=store.db.prepare('SELECT last_activity FROM staff_activity WHERE session_hash=?').get(req.session.hash);
+      if(last&&Date.now()-last.last_activity>300000)fail(423,'Session verrouillée. Reconnectez-vous.');
+      if(!last||!['GET','HEAD'].includes(req.method))store.db.prepare('INSERT INTO staff_activity VALUES(?,?) ON CONFLICT(session_hash) DO UPDATE SET last_activity=excluded.last_activity').run(req.session.hash,Date.now());
+    }
+    next();
+  }catch(error){next(error);}});
+  app.post('/api/session/activity',wrap((req,res)=>{if(!req.user)fail(401,'Connexion requise.');res.json({ok:true});}));
+  app.post('/api/session/lock',wrap((req,res)=>{
+    if(!req.user)fail(401,'Connexion requise.');
+    store.db.prepare('INSERT INTO staff_activity VALUES(?,0) ON CONFLICT(session_hash) DO UPDATE SET last_activity=0').run(req.session.hash);res.json({ok:true});
+  }));
+  app.post('/api/session/revoke-all',wrap((req,res)=>{
+    if(!req.user)fail(401,'Connexion requise.');
+    store.db.prepare('DELETE FROM sessions WHERE user_id=?').run(req.user.id);store.audit(req.user.id,'sessions_revoked',req.user.id);res.json({ok:true});
+  }));
   const restaurant = id => store.read('restaurant',id)?.data ?? fail(404,'Restaurant introuvable.');
   const profile = (customerId,restaurantId) => store.read('profile',`${customerId}:${restaurantId}`)?.data ?? blankCustomer(`${customerId}:${restaurantId}`,restaurantId);
   app.use('/api',(req,_res,next)=>{try{
@@ -82,8 +101,10 @@ export function createApp({databasePath, catalog, origin, production = false, po
     next();
   }catch(e){next(e);}});
   mountMembership({app,store,wrap,limit,newSession});
+  mountAuthRecovery({app,store,wrap,limit});
   mountLoyalty({app,store,wrap,limit,authorize,restaurant,profile});
   mountTenants({app,store,wrap,authorize,restaurant});
+  const register=mountRegister({app,store,wrap,authorize,restaurant,profile,limit});
   const priceFor=(req,data)=>priceOrder(restaurant(data.restaurantId),store.list('dish').map(r=>r.data),data,{member:!!req.member,points:profile(req.session.customer_id,data.restaurantId).loyaltyPoints});
   const restoreReward=row=>{
     const order=row.data;if(!order.redeemedPoints||order.redemptionRestored)return;
@@ -121,12 +142,12 @@ export function createApp({databasePath, catalog, origin, production = false, po
       else if (!managers.includes(req.user.role)) {r.returnCampaigns=[]; if(req.user.role==='kitchen')r.tables=[];}
       return r;
     });
-    const accessible = row => (!scopedId||row.restaurant_id===scopedId)&&(req.user ? (req.user.role==='platform_admin' || row.restaurant_id===req.user.restaurant_id) : row.owner_id===req.session.customer_id);
-    const orders = store.list('order').filter(accessible).map(row=>{
+    const accessible = row => !(req.user?.role==='platform_admin'&&register.config(row.restaurant_id))&&(!scopedId||row.restaurant_id===scopedId)&&(req.user ? (req.user.role==='platform_admin' || row.restaurant_id===req.user.restaurant_id) : row.owner_id===req.session.customer_id);
+    const orders = store.list('order').filter(accessible).filter(row=>req.user?.role!=='kitchen'||['accepted','preparing','ready','out_for_delivery'].includes(row.data.status)).map(row=>{
       const order = structuredClone(row.data);
       delete order.loyaltyCustomerId;delete order.redemptionRestored;
-      if (!req.user) {delete order.staffAttribution; delete order.tableSessionToken;}
-      if (req.user?.role==='kitchen') {delete order.customerPhone; delete order.deliveryAddress;}
+      if (!req.user) {delete order.staffAttribution; delete order.acceptedBy; delete order.tableSessionToken;}
+      if (req.user?.role==='kitchen') {delete order.customerPhone; delete order.customerName; delete order.deliveryAddress; delete order.acceptedBy; delete order.secureRef; delete order.staffAttribution;}
       return order;
     });
     res.json({member:req.member||null,user:req.user ? {id:req.user.id,email:req.user.email,role:req.user.role,restaurantId:req.user.restaurant_id} : null,
@@ -167,6 +188,7 @@ export function createApp({databasePath, catalog, origin, production = false, po
         tableNumber:table?.tableNumber,items:verified.verifiedItems,...verified,status:'submitted',paymentStatus:'unpaid',paymentMethod,createdAt:new Date().toISOString()};
       delete order.verifiedItems;
       store.put('order',order,r.id,req.session.customer_id);
+      if(register.config(r.id))register.enroll(store.read('order',id));
       pos.enqueue(order);
       store.db.prepare('INSERT INTO idempotency VALUES(?,?,?,?)').run(req.session.customer_id,key,fingerprint,id);
       const p=profile(req.session.customer_id,r.id); p.name=customerName; p.phone=customerPhone;
@@ -181,14 +203,25 @@ export function createApp({databasePath, catalog, origin, production = false, po
     const result=store.transaction(()=>{
       const row=store.read('order',req.params.id) ?? fail(404,'Commande introuvable.');
       authorize(req,row.restaurant_id);
+      if(register.config(row.restaurant_id)&&req.user.role==='platform_admin')fail(403,'Accès opérationnel propriétaire requis.');
       const status=req.body.status;
+      if(register.config(row.restaurant_id)&&['cancelled','rejected'].includes(status)) {
+        const bill=store.db.prepare('SELECT * FROM register_bills WHERE id=?').get(row.id);
+        if(bill){const balance=register.totals(bill);if(balance.paid>balance.refunded)fail(409,'Transaction encaissée : utilisez une correction financière.');}
+        row.data.cancellationReason=text(req.body.rejectionReason||req.body.reason,300,true);
+      }
+      if(req.user.role==='kitchen' && !['preparing','ready','out_for_delivery'].includes(status))fail(403,'Action réservée à la salle.');
+      if(status==='accepted' && row.data.acceptedAt && !['cancelled','rejected'].includes(row.data.status))return row.data;
+      if(req.body.expectedStatus && req.body.expectedStatus!==row.data.status)fail(409,'Commande modifiée. Actualisez avant de réessayer.');
       if (!transitions[row.data.status]?.includes(status)) fail(409,'Transition de commande invalide.');
       if (req.user.role==='kitchen' && !['accepted','preparing','ready','out_for_delivery'].includes(status)) fail(403,'Action réservée à la salle ou au manager.');
       if (status==='out_for_delivery' && row.data.mode!=='delivery' || status==='ready' && row.data.mode==='delivery') fail(400,'Statut incompatible avec le mode.');
-      if (status==='completed' && row.data.paymentStatus!=='paid') fail(409,'Enregistrez le paiement avant de terminer.');
+
       if (status==='cancelled' && !managers.includes(req.user.role)) fail(403,'Annulation réservée au manager.');
       const order=row.data; order.status=status; order.staffAttribution=req.user.email;
       if(status==='accepted') {
+        if(register.config(row.restaurant_id))register.enroll(row);
+        order.acceptedBy=req.user.id;
         const minutes=req.body.prepMinutesAdded??20;
         if(!Number.isInteger(minutes)||minutes<1||minutes>240) fail(400,'Délai invalide.');
         order.acceptedAt=new Date().toISOString(); order.estimatedReadyAt=new Date(Date.now()+minutes*60000).toISOString();
@@ -204,11 +237,21 @@ export function createApp({databasePath, catalog, origin, production = false, po
       saveOrder(req,row,`order_${status}`); return order;
     }); res.json(result);
   }));
+  app.post('/api/orders/:id/kitchen-print',wrap((req,res)=>{
+    const row=store.read('order',req.params.id)??fail(404,'Commande introuvable.');authorize(req,row.restaurant_id,['owner','manager','cashier','kitchen','waiter']);
+    if(!['accepted','preparing','ready','out_for_delivery','completed'].includes(row.data.status))fail(409,'Acceptez la commande avant impression.');
+    const key=req.get('Idempotency-Key');if(!key||!/^[a-zA-Z0-9-]{16,100}$/.test(key))fail(400,'Identifiant de tentative requis.');
+    const id=`${row.restaurant_id}:${key}`;
+    const result=store.transaction(()=>{const existing=store.read('kitchen_print',id);if(existing){if(existing.data.orderId!==row.id)fail(409,'Tentative déjà utilisée.');return existing.data;}
+      const attempt={id,restaurantId:row.restaurant_id,orderId:row.id,state:'unknown',at:new Date().toISOString(),actor:req.user.id,duplicate:store.list('kitchen_print').some(p=>p.data.orderId===row.id)};
+      store.put('kitchen_print',attempt,row.restaurant_id);store.audit(req.user.id,'kitchen_print_unknown',row.id);return attempt;});res.json(result);
+  }));
   app.patch('/api/orders/:id/payment',wrap((req,res)=>{
     const result=store.transaction(()=>{
       const row=store.read('order',req.params.id)??fail(404,'Commande introuvable.');
       const status=req.body.paymentStatus;
       authorize(req,row.restaurant_id,status==='refunded'?managers:cashiers);
+      if(register.config(row.restaurant_id))fail(409,'Utilisez Caisse POS pour enregistrer les paiements et remboursements dans le journal.');
       const order=row.data;
       if(status==='paid' && order.paymentStatus==='unpaid' && !['cancelled','rejected'].includes(order.status)) order.paymentStatus='paid';
       else if(status==='refunded' && order.paymentStatus==='paid') {
@@ -284,24 +327,33 @@ export function createApp({databasePath, catalog, origin, production = false, po
     store.put('call',call,data.restaurantId,req.session.customer_id); res.json({success:true,message:'Demande transmise au serveur.'});
   }));
   app.patch('/api/calls/:id',wrap((req,res)=>{
-    const row=store.read('call',req.params.id)??fail(404,'Demande introuvable.'); authorize(req,row.restaurant_id,cashiers);
+    const row=store.read('call',req.params.id)??fail(404,'Demande introuvable.'); authorize(req,row.restaurant_id,[...cashiers,'waiter']);
     row.data.resolved=true; store.put('call',row.data,row.restaurant_id,row.owner_id); res.json({ok:true});
   }));
   app.get('/api/users',wrap((req,res)=>{
     const id=req.query.restaurantId; authorize(req,id,['owner','platform_admin']);
     res.json(store.db.prepare('SELECT id,email,role,restaurant_id AS restaurantId,active FROM users WHERE restaurant_id=?').all(id));
   }));
+  const verifyTeamOwner=async req=>{
+    limit(`team-reauth:${req.user.id}`,8,60000);
+    const initial=store.db.prepare('SELECT active,password_hash FROM users WHERE id=?').get(req.user.id);
+    if(!initial?.active)fail(401,'Reconnectez-vous.');
+    if(typeof req.body.ownerPassword!=='string'||req.body.ownerPassword.length>256||!await passwordMatches(req.body.ownerPassword,initial.password_hash))fail(403,'Confirmez votre mot de passe propriétaire.');
+    const current=store.db.prepare('SELECT active,password_hash FROM users WHERE id=?').get(req.user.id);if(!current?.active||current.password_hash!==initial.password_hash)fail(401,'Reconnectez-vous.');
+  };
   app.post('/api/users',wrap(async(req,res)=>{
     authorize(req,req.body.restaurantId,['owner','platform_admin']);
     if(req.body.role==='platform_admin' || req.body.role==='owner') fail(403,'Ce rôle doit être créé par le responsable du serveur.');
     if(typeof req.body.email!=='string'||!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(req.body.email)||req.body.email.length>254||typeof req.body.password!=='string'||req.body.password.length<12||req.body.password.length>256||!['manager','kitchen','cashier','waiter'].includes(req.body.role))fail(400,'Email, rôle ou mot de passe invalide.');
     if(store.db.prepare('SELECT id FROM users WHERE email=?').get(req.body.email.toLowerCase().trim()))fail(409,'Cet email est déjà utilisé.');
+    await verifyTeamOwner(req);
     const id=await createUser(store,req.body); store.audit(req.user.id,'staff_created',id); res.status(201).json({id});
   }));
-  app.patch('/api/users/:id',wrap((req,res)=>{
+  app.patch('/api/users/:id',wrap(async(req,res)=>{
     const user=store.db.prepare('SELECT * FROM users WHERE id=?').get(req.params.id)??fail(404,'Utilisateur introuvable.');
     authorize(req,user.restaurant_id,['owner','platform_admin']);
     if(['owner','platform_admin'].includes(user.role) || typeof req.body.active!=='boolean') fail(403,'Action refusée.');
+    await verifyTeamOwner(req);
     store.db.prepare('UPDATE users SET active=? WHERE id=?').run(req.body.active?1:0,user.id);
     store.db.prepare('DELETE FROM sessions WHERE user_id=?').run(user.id); store.audit(req.user.id,'staff_access_changed',user.id); res.json({ok:true});
   }));

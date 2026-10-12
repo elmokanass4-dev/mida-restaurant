@@ -32,10 +32,11 @@ export function priceOrder(restaurant, dishes, input, membership={member:false,p
       const count = modifiers.filter(m => m.groupId === group.id).length;
       if (count < Math.max(group.minSelections, group.required ? 1 : 0) || count > group.maxSelections) fail(400, `Choisissez les options : ${group.name.fr}`);
     }
-    const unitPriceMAD = dish.priceMAD + modifiers.reduce((sum, m) => sum + m.priceMAD, 0);
-    return {dishId: dish.id, dishName: dish.name.fr, image: dish.image, quantity: item.quantity, selectedModifiers: modifiers, unitPriceMAD, lineTotalMAD: unitPriceMAD * item.quantity, itemNotes: text(item.itemNotes, 300)};
+    const unitMinor = Math.round(dish.priceMAD*100) + modifiers.reduce((sum, m) => sum + Math.round(m.priceMAD*100), 0);
+    const unitPriceMAD = unitMinor/100;
+    return {dishId: dish.id, dishName: dish.name.fr, image: dish.image, quantity: item.quantity, selectedModifiers: modifiers, unitPriceMAD, lineTotalMAD: unitMinor * item.quantity/100, itemNotes: text(item.itemNotes, 300)};
   });
-  const subtotalMAD = items.reduce((sum, i) => sum + i.lineTotalMAD, 0);
+  const subtotalMAD = items.reduce((sum, i) => sum + Math.round(i.lineTotalMAD*100), 0)/100;
   let deliveryFeeMAD = 0;
   if (input.mode === 'delivery') {
     const settings = restaurant.deliverySettings;

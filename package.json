@@ -17,7 +17,9 @@
     "test": "node --test server/*.test.mjs",
     "test:load": "node server/load-test.mjs",
     "test:pos": "node --test server/pos.test.mjs",
+    "test:register": "node --test server/register.test.mjs server/recovery.test.mjs",
     "demo:pos": "node server/pos-demo.mjs",
+    "demo:register": "node server/register-preview.mjs",
     "provision-user": "node server/provision-user.mjs",
     "build:server": "node server/catalog-build.mjs && vite build --mode server"
   },

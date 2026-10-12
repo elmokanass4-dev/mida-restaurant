@@ -1,0 +1,45 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {DatabaseSync} from 'node:sqlite';
+import {randomBytes} from 'node:crypto';
+import {mkdtemp,readFile,writeFile} from 'node:fs/promises';
+import path from 'node:path';
+import os from 'node:os';
+import {posFixture} from './pos-fixture.mjs';
+import {createReplica,createSyncWorker} from './register-sync.mjs';
+import {encryptedBackup,restoreBackup,verifyDatabase} from './recovery.mjs';
+
+test('ordered replication survives outage, lost acknowledgement and worker restart without duplicate events',async t=>{
+  const f=await posFixture({mode:'disabled'});t.after(f.close);
+  const receiver=new DatabaseSync(':memory:');t.after(()=>receiver.close());const replica=createReplica(receiver);
+  for(let i=1;i<=2;i++)f.store.db.prepare('INSERT INTO register_outbox(id,restaurant_id,kind,data,at) VALUES(?,?,?,?,?)').run(`event-${i}`,f.restaurantId,'test',JSON.stringify({amount:i*100}),new Date().toISOString());
+  let offline=true,lost=true,now=Date.now();
+  const transport={async send(event){if(offline)throw new Error('network');const ack=replica.receive('restaurant-local-service',event);if(lost){lost=false;throw new Error('ack lost');}return ack;}};
+  let worker=createSyncWorker(f.store.db,transport,{now:()=>now});
+  assert.equal((await worker.tick()).state,'pending');assert.equal(replica.freshness('restaurant-local-service').stale,true);
+  offline=false;now+=10000;assert.equal((await worker.tick()).state,'pending');
+  assert.equal(receiver.prepare('SELECT COUNT(*) n FROM mirror_events').get().n,1);
+  now+=10000;worker=createSyncWorker(f.store.db,transport,{now:()=>now});assert.equal((await worker.tick()).state,'acknowledged');assert.equal((await worker.tick()).state,'acknowledged');
+  assert.equal(receiver.prepare('SELECT COUNT(*) n FROM mirror_events').get().n,2);assert.equal(replica.freshness('restaurant-local-service').stale,false);
+  assert.equal(f.store.db.prepare('SELECT COUNT(*) n FROM register_outbox WHERE acknowledged_at IS NULL').get().n,0);
+  const event={sequence:1,id:'event-1',restaurant_id:f.restaurantId,version:1,kind:'test',data:'changed',at:new Date().toISOString()};assert.throws(()=>replica.receive('restaurant-local-service',event),/CONFLICT/);
+  assert.throws(()=>replica.receive('restaurant-local-service',{...event,id:'new',version:99}),/UNSUPPORTED/);
+});
+test('encrypted backup restores verified database, rejects tampering, wrong keys and overwrite',async t=>{
+  const directory=await mkdtemp(path.join(os.tmpdir(),'mida-recovery-test-')),source=path.join(directory,'source.sqlite'),target=path.join(directory,'backup.mida-backup'),restored=path.join(directory,'restored.sqlite');
+  const f=await posFixture({mode:'disabled',databasePath:source});t.after(f.close);
+  f.store.db.prepare('INSERT INTO register_config VALUES(?,?)').run(f.restaurantId,JSON.stringify({pilot:true,businessDayHour:4,legal:{name:'Backup test'}}));
+  const owner=await f.staff('owner'),order=(await f.submit()).body;
+  const headers={'Idempotency-Key':'backup-test-open-0001'};
+  assert.equal((await owner(`/register/${f.restaurantId}/cash/open`,'POST',{drawer:'Test',opening:10000},headers)).status,200);
+  await owner(`/orders/${order.id}/status`,'PATCH',{status:'accepted'});
+  const total=Math.round(order.totalMAD*100);
+  assert.equal((await owner(`/register/orders/${order.id}/payments`,'POST',{version:1,amount:total,method:'cash',tendered:total},{'Idempotency-Key':'backup-test-pay-00001'})).status,200);
+  const key=randomBytes(32).toString('hex');const before=await encryptedBackup(source,target,key);
+  assert.equal(before.payments.total,total);assert.equal(before.documents.count,1);
+  assert.deepEqual(await restoreBackup(target,restored,key),before);assert.deepEqual(verifyDatabase(restored),before);
+  await assert.rejects(restoreBackup(target,restored,key),/EEXIST/);
+  await assert.rejects(restoreBackup(target,path.join(directory,'bad.sqlite'),randomBytes(32).toString('hex')));
+  const bytes=await readFile(target);bytes[25]^=1;await writeFile(path.join(directory,'tampered'),bytes);
+  await assert.rejects(restoreBackup(path.join(directory,'tampered'),path.join(directory,'bad.sqlite'),key));
+});

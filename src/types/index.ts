@@ -181,6 +181,7 @@ export interface StaffCallRequest {
 }
 
 export interface Order {
+  channel?: 'staff' | 'customer';
   id: string;
   orderNumber: string; // e.g. BB-1042
   secureRef: string; // unguessable token e.g. ord_7f9a2e8c

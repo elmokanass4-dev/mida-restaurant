@@ -1,0 +1,8 @@
+import {useEffect,useRef,useState} from 'react';
+import {Order} from '../../types';
+import {api} from '../../services/api';
+export function PreparationPrint({order,onClose}:{order:Order;onClose:()=>void}){
+ const dialog=useRef<HTMLDialogElement>(null),key=useRef(crypto.randomUUID()),busyRef=useRef(false),[busy,setBusy]=useState(false),[duplicate,setDuplicate]=useState(false),[error,setError]=useState('');
+ useEffect(()=>{dialog.current?.showModal();return()=>dialog.current?.close();},[]);
+ return <dialog ref={dialog} className="ws-preparation" onCancel={onClose}><div className="ws-print-controls"><button autoFocus onClick={onClose}>Fermer</button><p>Bon de préparation · impression navigateur, papier non confirmé. Vérifiez avant de réimprimer.</p><button disabled={busy} onClick={async()=>{if(busyRef.current)return;busyRef.current=true;setBusy(true);try{const result=await api<{duplicate:boolean}>(`/orders/${order.id}/kitchen-print`,'POST',{}, {'Idempotency-Key':key.current});setDuplicate(result.duplicate);key.current=crypto.randomUUID();setTimeout(()=>window.print(),100);}catch(e){setError((e as Error).message);}finally{busyRef.current=false;setBusy(false);}}}>Imprimer le bon de préparation</button><p role="alert">{error}</p></div><article><h2>CUISINE · {order.orderNumber}</h2>{duplicate&&<strong>RÉIMPRESSION — vérifier avant préparation</strong>}<p>{order.tableNumber?`Table ${order.tableNumber}`:order.mode==='delivery'?'Livraison':'À emporter'}</p>{order.items.map((i,n)=><p key={n}><strong>{i.quantity} × {i.dishName}</strong><br/>{i.selectedModifiers.map(m=>m.optionName).join(', ')}<br/>{i.itemNotes}</p>)}<p>{order.customerNotes}</p><small>{new Date(order.createdAt).toLocaleString('fr-MA')}</small></article></dialog>;
+}

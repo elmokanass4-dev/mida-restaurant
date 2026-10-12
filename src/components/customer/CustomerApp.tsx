@@ -170,7 +170,7 @@ export const CustomerApp: React.FC<Props> = ({
   return (
     <div className={`min-h-screen bg-[#080305] text-neutral-100 flex flex-col items-center justify-start ${deviceFrameMode ? 'p-0 sm:py-8' : ''}`}>
       {/* Top Floating Utility Bar (Language switch & Device Mockup toggle) */}
-      <div className="w-full max-w-md px-4 py-2 flex items-center justify-between text-xs text-neutral-400 bg-neutral-950/70 border-b border-neutral-900 sticky top-0 z-50 backdrop-blur-md">
+      <div className="w-full max-w-5xl px-4 py-2 flex items-center justify-between text-xs text-neutral-400 bg-neutral-950/70 border-b border-neutral-900 sticky top-0 z-50 backdrop-blur-md">
         <div className="flex items-center gap-2">
           <Globe size={14} className="text-amber-400" />
           <div className="flex items-center gap-1.5 font-bold">
@@ -192,6 +192,7 @@ export const CustomerApp: React.FC<Props> = ({
 
         <div className="flex items-center gap-2">
           <button
+            hidden={new URLSearchParams(window.location.search).get('preview') !== '1'}
             onClick={() => setDeviceFrameMode(!deviceFrameMode)}
             className="flex items-center gap-1 px-2 py-1 rounded-lg bg-neutral-900 hover:bg-neutral-800 text-neutral-300 border border-neutral-800 text-[11px] font-medium"
             title="Basculer vue smartphone"
@@ -204,7 +205,7 @@ export const CustomerApp: React.FC<Props> = ({
 
       {/* Main Container / Smartphone Shell */}
       <div
-        className={`w-full max-w-md bg-[#0d0609] text-neutral-100 flex flex-col min-h-screen relative overflow-hidden transition-all ${
+        className={`w-full ${deviceFrameMode?'max-w-md':'max-w-5xl'} bg-[#0d0609] text-neutral-100 flex flex-col min-h-screen relative overflow-hidden transition-all ${
           deviceFrameMode
             ? 'sm:rounded-[48px] sm:border-[8px] sm:border-neutral-800 sm:shadow-[0_25px_60px_-15px_rgba(0,0,0,0.9)] sm:my-4 sm:min-h-[850px] sm:max-h-[880px]'
             : ''
@@ -358,7 +359,7 @@ export const CustomerApp: React.FC<Props> = ({
           className={`${
             deviceFrameMode
               ? 'absolute bottom-0 left-0 right-0'
-              : 'fixed bottom-0 left-0 right-0 max-w-md mx-auto'
+              : 'fixed bottom-0 left-0 right-0 max-w-5xl mx-auto'
           } z-40 bg-[#12070c]/98 backdrop-blur-xl border-t border-amber-950/80 shadow-[0_-8px_30px_rgba(0,0,0,0.85)] grid grid-cols-5 h-16 items-center px-1 pb-[env(safe-area-inset-bottom,0px)]`}
         >
           <button

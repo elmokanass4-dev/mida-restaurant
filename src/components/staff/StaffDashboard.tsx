@@ -40,15 +40,17 @@ import {
 interface Props {
   restaurant: Restaurant;
   onSwitchToCustomerView: () => void;
+  module?: 'menu' | 'tables';
 }
 
-export const StaffDashboard: React.FC<Props> = ({ restaurant, onSwitchToCustomerView }) => {
+export const StaffDashboard: React.FC<Props> = ({ restaurant, onSwitchToCustomerView, module }) => {
   const [activeTab, setActiveTab] = useState<
     'orders' | 'menu' | 'tables' | 'campaigns' | 'analytics' | 'settings'
-  >('orders');
+  >(module || 'orders');
   const [ordersFilter, setOrdersFilter] = useState<
     'all' | 'submitted' | 'preparing' | 'ready' | 'completed' | 'cancelled'
   >('all');
+  useEffect(() => { if (module) setActiveTab(module); }, [module]);
   const [soundEnabled, setSoundEnabled] = useState(false);
   const [ticketOrder, setTicketOrder] = useState<Order | null>(null);
 
@@ -194,7 +196,7 @@ export const StaffDashboard: React.FC<Props> = ({ restaurant, onSwitchToCustomer
   return (
     <div className="min-h-screen bg-[#0d070a] text-neutral-100 flex flex-col font-sans">
       {canManage && <div className="p-3 flex items-center justify-between bg-neutral-900 text-sm"><span>Prise de commandes : {restaurant.isOpen ? 'ouverte' : 'fermée'}</span><button className="text-amber-300 underline" onClick={() => run(storage.setService(restaurant.id, !restaurant.isOpen))}>{restaurant.isOpen ? 'Fermer les commandes' : 'Ouvrir les commandes'}</button></div>}{/* Top Operational Bar */}
-      <header className="bg-[#140a0f] border-b border-amber-950/60 px-4 sm:px-6 py-3 flex items-center justify-between sticky top-0 z-40">
+      <header hidden={!!module} className="bg-[#140a0f] border-b border-amber-950/60 px-4 sm:px-6 py-3 flex items-center justify-between sticky top-0 z-40">
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-amber-600 to-amber-500 flex items-center justify-center text-black font-extrabold shadow-md">
             <Flame size={20} />
@@ -267,7 +269,7 @@ export const StaffDashboard: React.FC<Props> = ({ restaurant, onSwitchToCustomer
       )}
 
       {/* Navigation Sub-Tabs */}
-      <div className="border-b border-neutral-800 bg-[#12080d] px-4 sm:px-6">
+      <div hidden={!!module} className="border-b border-neutral-800 bg-[#12080d] px-4 sm:px-6">
         <div className="flex items-center gap-2 overflow-x-auto scrollbar-none py-2 text-xs font-semibold">
           <button
             onClick={() => setActiveTab('orders')}

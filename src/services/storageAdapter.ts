@@ -35,7 +35,8 @@ class StorageAdapter {
     if(!backendEnabled) return;
     const generation=this.generation;
     const sequence=++this.refreshSequence;
-    const next=await api<Snapshot>('/snapshot');
+    let next:Snapshot;
+    try{next=await api<Snapshot>('/snapshot');}catch(e){this.connected=false;window.dispatchEvent(new CustomEvent(ERROR_EVENT_NAME,{detail:e instanceof Error?e.message:'Synchronisation interrompue'}));throw e;}
     if(generation!==this.generation||sequence!==this.refreshSequence) return;
     const newOrders=next.orders.some(o=>!this.snapshot.orders.some(old=>old.id===o.id));
     this.snapshot=next; this.user=next.user; this.connected=true;
